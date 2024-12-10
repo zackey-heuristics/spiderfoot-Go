@@ -369,8 +369,8 @@ class SpiderFootDb:
                         if "correlation" in query:
                             self.dbh.execute(query)
                         self.conn.commit()
-                except sqlite3.Error:
-                    raise IOError("Looks like you are running a pre-4.0 database. Unfortunately "
+                except sqlite3.Error as e:
+                    raise IOError(f"{e} || Looks like you are running a pre-4.0 database. Unfortunately "
                                   "SpiderFoot wasn't able to migrate you, so you'll need to delete "
                                   "your SpiderFoot database in order to proceed.") from None
 
