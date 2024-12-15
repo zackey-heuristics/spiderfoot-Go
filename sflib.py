@@ -179,7 +179,7 @@ class SpiderFoot:
 
         return val
 
-    def error(self, message: str) -> None:
+    def error(self, message: str, exc_info=False) -> None:
         """Print and log an error message
 
         Args:
@@ -188,7 +188,7 @@ class SpiderFoot:
         if not self.opts['__logging']:
             return
 
-        self.log.error(message, extra={'scanId': self._scanId})
+        self.log.error(message, extra={'scanId': self._scanId}, exc_info=exc_info)
 
     def fatal(self, error: str) -> None:
         """Print an error message and stacktrace then exit.
@@ -224,7 +224,7 @@ class SpiderFoot:
 
         self.log.info(f"{message}", extra={'scanId': self._scanId})
 
-    def debug(self, message: str) -> None:
+    def debug(self, message: str, exc_info=False) -> None:
         """Log and print a debug message.
 
         Args:
@@ -235,7 +235,7 @@ class SpiderFoot:
         if not self.opts['__logging']:
             return
 
-        self.log.debug(f"{message}", extra={'scanId': self._scanId})
+        self.log.debug(f"{message}", extra={'scanId': self._scanId}, exc_info=exc_info)
 
     def hashstring(self, string: str) -> str:
         """Returns a SHA256 hash of the specified input.
