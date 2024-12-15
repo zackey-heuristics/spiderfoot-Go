@@ -184,6 +184,7 @@ class SpiderFoot:
 
         Args:
             message (str): error message
+            exc_info (Exception): Additional exception information for logging.
         """
         if not self.opts['__logging']:
             return
@@ -229,6 +230,7 @@ class SpiderFoot:
 
         Args:
             message (str): debug message
+            exc_info (Exception): Additional exception information for logging.
         """
         if not self.opts['_debug']:
             return
