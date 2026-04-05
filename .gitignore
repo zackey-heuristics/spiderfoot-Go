@@ -173,3 +173,10 @@ cover/
 # Documentation #
 #################
 docs/_build/
+
+# Go #
+######
+/spiderfoot
+*.test
+vendor/
+coverage.out

@@ -1,0 +1,31 @@
+run:
+  go: "1.24"
+  timeout: 5m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - gosimple
+    - unused
+    - ineffassign
+    - revive
+    - gofmt
+    - goimports
+
+linters-settings:
+  revive:
+    rules:
+      - name: exported
+        arguments:
+          - checkPrivateReceivers
+          - disableStutteringCheck
+
+issues:
+  exclude-dirs:
+    - modules
+    - spiderfoot
+    - test
+    - correlations
+    - docs

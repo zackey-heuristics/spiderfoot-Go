@@ -1,0 +1,36 @@
+# SpiderFoot-Go example configuration.
+
+# Enable verbose debug logging.
+debug: false
+
+# Maximum number of concurrent worker threads.
+max_threads: 3
+
+# SQLite database path.
+database: ~/.spiderfoot/spiderfoot.db
+
+# Default HTTP user agent string used by fetchers.
+user_agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/115.0
+
+# Optional DNS server override. Leave empty to use the system resolver.
+dns_server: ""
+
+# Default fetch timeout in seconds.
+fetch_timeout: 5
+
+# Web UI listen address.
+listen: 127.0.0.1:5001
+
+# Base path for the web UI.
+web_root: /
+
+# Module-specific options. The optional `default` block is merged into each
+# module's options, then overridden by the named module block.
+modules:
+  default:
+    enabled: true
+    timeout: 5
+
+  sfp_example:
+    api_key: ""
+    verify_tls: true
