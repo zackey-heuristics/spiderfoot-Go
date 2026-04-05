@@ -3,23 +3,45 @@ package webui
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/db"
 )
 
 func (s *Server) routes() {
+	// Static assets (embedded via go:embed).
+	staticSub, _ := fs.Sub(staticFS, "static")
+	s.mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(staticSub)))
+
+	// HTML pages.
+	s.mux.HandleFunc("GET /{$}", s.handleIndex)
+	s.mux.HandleFunc("GET /newscan", s.handleNewScanPage)
+	s.mux.HandleFunc("GET /scaninfo", s.handleScanInfoPage)
+	s.mux.HandleFunc("GET /opts", s.handleSettingsPage)
+
+	// API endpoints.
 	s.mux.HandleFunc("GET /ping", s.handlePing)
 	s.mux.HandleFunc("GET /api/scans", s.handleListScans)
 	s.mux.HandleFunc("GET /api/scans/{id}", s.handleGetScan)
 	s.mux.HandleFunc("GET /api/scans/{id}/results", s.handleGetResults)
 	s.mux.HandleFunc("GET /api/scans/{id}/summary", s.handleGetSummary)
+	s.mux.HandleFunc("GET /api/scans/{id}/log", s.handleGetScanLog)
+	s.mux.HandleFunc("GET /api/scans/{id}/search", s.handleSearchResults)
+	s.mux.HandleFunc("GET /api/scans/{id}/export", s.handleExportResults)
 	s.mux.HandleFunc("POST /api/scans/{id}/delete", s.handleDeleteScan)
+	s.mux.HandleFunc("POST /api/scans/{id}/falsepositive", s.handleSetFalsePositive)
+	s.mux.HandleFunc("POST /api/startscan", s.handleStartScan)
+	s.mux.HandleFunc("POST /api/rerunscan", s.handleRerunScan)
+	s.mux.HandleFunc("POST /api/stopscan", s.handleStopScan)
+	s.mux.HandleFunc("GET /api/scanstatus", s.handleScanStatus)
+	s.mux.HandleFunc("GET /api/modules", s.handleListModules)
+	s.mux.HandleFunc("GET /api/eventtypes", s.handleListEventTypes)
 	s.mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	s.mux.HandleFunc("POST /api/config", s.handleSetConfig)
-	s.mux.HandleFunc("GET /{$}", s.handleIndex)
 }
 
 func (s *Server) handlePing(w http.ResponseWriter, _ *http.Request) {
@@ -81,6 +103,35 @@ func (s *Server) handleGetSummary(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
+
+	// If this server owns the scan, abort and wait for shutdown.
+	if val, ok := s.scanners.Load(id); ok {
+		as := val.(*activeScan)
+		as.scanner.Abort()
+		as.cancel()
+		exited := false
+		for i := 0; i < 100; i++ {
+			if _, stillRunning := s.scanners.Load(id); !stillRunning {
+				exited = true
+				break
+			}
+			time.Sleep(50 * time.Millisecond)
+		}
+		if !exited {
+			http.Error(w, "scan is still shutting down; try again shortly", http.StatusConflict)
+			return
+		}
+	} else {
+		// Not owned by this server — check DB status before deleting.
+		si, err := s.database.ScanGet(id)
+		if err != nil || si == nil {
+			// Doesn't exist — let ScanDelete return ErrScanNotFound below.
+		} else if si.Status == "RUNNING" || si.Status == "CREATED" || si.Status == "ABORT-REQUESTED" {
+			http.Error(w, "scan is in non-terminal state "+si.Status+" and not managed by this server; stop it first", http.StatusConflict)
+			return
+		}
+	}
+
 	if err := s.database.ScanDelete(id); err != nil {
 		if errors.Is(err, db.ErrScanNotFound) {
 			http.Error(w, "scan not found", http.StatusNotFound)
@@ -127,12 +178,45 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 		s.handleListScans(w, r)
 		return
 	}
+	s.renderPage(w, "scanlist.html", pageData{PageID: "SCANLIST"})
+}
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write([]byte(`<!DOCTYPE html>
-<html><head><title>SpiderFoot</title></head>
-<body><h1>SpiderFoot</h1><p>Phase 1 &mdash; <a href="/api/scans">View Scans (JSON)</a></p></body>
-</html>`))
+func (s *Server) handleNewScanPage(w http.ResponseWriter, _ *http.Request) {
+	s.renderPage(w, "newscan.html", pageData{PageID: "NEWSCAN"})
+}
+
+// scanInfoData carries data for the scan info template.
+type scanInfoData struct {
+	ID     string
+	Name   string
+	Target string
+	Status string
+}
+
+func (s *Server) handleScanInfoPage(w http.ResponseWriter, r *http.Request) {
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Redirect(w, r, "/", http.StatusFound)
+		return
+	}
+	si, err := s.database.ScanGet(id)
+	if err != nil || si == nil {
+		http.Error(w, "scan not found", http.StatusNotFound)
+		return
+	}
+	s.renderPage(w, "scaninfo.html", pageData{
+		PageID: "SCANINFO",
+		Data: scanInfoData{
+			ID:     si.GUID,
+			Name:   si.Name,
+			Target: si.SeedTarget,
+			Status: si.Status,
+		},
+	})
+}
+
+func (s *Server) handleSettingsPage(w http.ResponseWriter, _ *http.Request) {
+	s.renderPage(w, "settings.html", pageData{PageID: "SETTINGS"})
 }
 
 func writeJSON(w http.ResponseWriter, v any) {

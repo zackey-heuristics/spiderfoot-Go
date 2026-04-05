@@ -145,6 +145,10 @@ func TestDeleteScan(t *testing.T) {
 	if err := database.ScanCreate("s1", "test scan", "example.com"); err != nil {
 		t.Fatal(err)
 	}
+	// Mark as finished so delete is allowed (non-local scans in non-terminal state are blocked).
+	if err := database.ScanUpdateStatus("s1", "FINISHED"); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/scans/s1/delete", nil)
 	w := httptest.NewRecorder()

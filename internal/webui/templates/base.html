@@ -1,0 +1,79 @@
+{{define "base"}}<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpiderFoot</title>
+<link rel="icon" href="{{.DocRoot}}/static/img/spiderfoot-icon.png">
+<link rel="stylesheet" href="{{.DocRoot}}/static/vendor/bootstrap/css/bootstrap.min.css">
+<link rel="stylesheet" href="{{.DocRoot}}/static/vendor/tablesorter/css/theme.default.min.css">
+<link rel="stylesheet" href="{{.DocRoot}}/static/vendor/tablesorter/css/jquery.tablesorter.pager.min.css">
+<link rel="stylesheet" href="{{.DocRoot}}/static/vendor/alertifyjs/css/alertify.min.css">
+<link rel="stylesheet" href="{{.DocRoot}}/static/css/spiderfoot.css">
+<script>
+  if (localStorage.getItem('sf-theme') === 'dark') {
+    document.write('<link rel="stylesheet" href="{{.DocRoot}}/static/css/dark.css" id="darktheme">');
+  }
+</script>
+</head>
+<body>
+<nav class="navbar navbar-default" role="navigation">
+  <div class="container-fluid">
+    <div class="navbar-header">
+      <a class="navbar-brand" href="{{.DocRoot}}/">
+        <img id="headerimg" src="{{.DocRoot}}/static/img/spiderfoot-header.png" style="height:25px;">
+      </a>
+    </div>
+    <ul class="nav navbar-nav">
+      <li {{if eq .PageID "NEWSCAN"}}class="active"{{end}}><a href="{{.DocRoot}}/newscan"><span class="glyphicon glyphicon-screenshot"></span>&nbsp;New Scan</a></li>
+      <li {{if eq .PageID "SCANLIST"}}class="active"{{end}}><a href="{{.DocRoot}}/"><span class="glyphicon glyphicon-list"></span>&nbsp;Scans</a></li>
+      <li {{if eq .PageID "SETTINGS"}}class="active"{{end}}><a href="{{.DocRoot}}/opts"><span class="glyphicon glyphicon-wrench"></span>&nbsp;Settings</a></li>
+    </ul>
+    <ul class="nav navbar-nav navbar-right">
+      <li><a href="#" id="btn-theme" onclick="toggleTheme(); return false;"><span class="glyphicon glyphicon-adjust"></span></a></li>
+    </ul>
+  </div>
+</nav>
+<div class="container-fluid">
+{{template "content" .}}
+</div>
+
+<script src="{{.DocRoot}}/static/vendor/jquery/jquery.min.js"></script>
+<script src="{{.DocRoot}}/static/vendor/bootstrap/js/bootstrap.min.js"></script>
+<script src="{{.DocRoot}}/static/vendor/alertifyjs/alertify.min.js"></script>
+<script src="{{.DocRoot}}/static/vendor/tablesorter/js/jquery.tablesorter.min.js"></script>
+<script src="{{.DocRoot}}/static/vendor/tablesorter/js/jquery.tablesorter.widgets.min.js"></script>
+<script src="{{.DocRoot}}/static/vendor/tablesorter/js/extras/jquery.tablesorter.pager.min.js"></script>
+<script src="{{.DocRoot}}/static/vendor/d3/d3.min.js"></script>
+<script src="{{.DocRoot}}/static/vendor/sigma/sigma.min.js"></script>
+<script>
+var docroot = '{{.DocRoot}}';
+var sfVersion = '{{.Version}}';
+function toggleTheme() {
+  var dark = document.getElementById('darktheme');
+  if (dark) {
+    dark.parentNode.removeChild(dark);
+    localStorage.removeItem('sf-theme');
+    document.getElementById('headerimg').src = docroot + '/static/img/spiderfoot-header.png';
+  } else {
+    var link = document.createElement('link');
+    link.rel = 'stylesheet'; link.id = 'darktheme';
+    link.href = docroot + '/static/css/dark.css';
+    document.head.appendChild(link);
+    localStorage.setItem('sf-theme', 'dark');
+    document.getElementById('headerimg').src = docroot + '/static/img/spiderfoot-header-dark.png';
+  }
+}
+// On load: set correct header image for dark mode
+if (localStorage.getItem('sf-theme') === 'dark') {
+  document.addEventListener('DOMContentLoaded', function() {
+    var img = document.getElementById('headerimg');
+    if (img) img.src = docroot + '/static/img/spiderfoot-header-dark.png';
+  });
+}
+</script>
+<script src="{{.DocRoot}}/static/js/spiderfoot.js"></script>
+{{template "scripts" .}}
+</body>
+</html>{{end}}
+{{define "scripts"}}{{end}}

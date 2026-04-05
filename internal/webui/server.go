@@ -4,26 +4,42 @@ package webui
 import (
 	"context"
 	"crypto/subtle"
+	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/config"
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/db"
+	"github.com/zackey-heuristics/spiderfoot-Go/internal/scan"
 )
+
+// activeScan tracks a running scan and its cancellation handle.
+type activeScan struct {
+	scanner *scan.Scanner
+	cancel  context.CancelFunc
+}
 
 // Server is the SpiderFoot web UI HTTP server.
 type Server struct {
-	database *db.DB
-	cfg      *config.Config
-	mux      *http.ServeMux
+	database  *db.DB
+	cfg       *config.Config
+	mux       *http.ServeMux
+	templates map[string]*template.Template
+	scanners  sync.Map // map[string]*activeScan
 }
 
 // New creates a new web UI server and registers all routes.
 func New(database *db.DB, cfg *config.Config) *Server {
-	s := &Server{database: database, cfg: cfg, mux: http.NewServeMux()}
+	tmpl, err := parseAllTemplates()
+	if err != nil {
+		slog.Error("failed to parse templates", "error", err)
+		tmpl = make(map[string]*template.Template)
+	}
+	s := &Server{database: database, cfg: cfg, mux: http.NewServeMux(), templates: tmpl}
 	s.routes()
 	return s
 }

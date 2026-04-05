@@ -150,3 +150,81 @@ func (d *DB) EventsGetUnique(scanID, eventType string) ([]string, error) {
 
 	return values, nil
 }
+
+// EventsSearch returns stored events whose data matches the search value.
+func (d *DB) EventsSearch(scanID, value, eventType string) ([]StoredEvent, error) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	query := `SELECT scan_instance_id, hash, type, generated, confidence, visibility, risk, module, data, false_positive, source_event_hash
+		FROM tbl_scan_results
+		WHERE scan_instance_id = ? AND data LIKE ?`
+	args := []any{scanID, "%" + value + "%"}
+	if eventType != "" {
+		query += ` AND type = ?`
+		args = append(args, eventType)
+	}
+	query += ` ORDER BY generated ASC, hash ASC`
+
+	rows, err := d.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("search stored events: %w", err)
+	}
+	defer rows.Close()
+
+	var events []StoredEvent
+	for rows.Next() {
+		var evt StoredEvent
+		var falsePositive int
+		if err := rows.Scan(
+			&evt.ScanID, &evt.Hash, &evt.Type, &evt.Generated,
+			&evt.Confidence, &evt.Visibility, &evt.Risk,
+			&evt.Module, &evt.Data, &falsePositive, &evt.SourceEventHash,
+		); err != nil {
+			return nil, fmt.Errorf("scan search result row: %w", err)
+		}
+		evt.FalsePositive = falsePositive != 0
+		events = append(events, evt)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate search results: %w", err)
+	}
+
+	return events, nil
+}
+
+// EventSetFalsePositive updates the false positive flag for events matching the given hashes.
+func (d *DB) EventSetFalsePositive(scanID string, hashes []string, fp bool) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if len(hashes) == 0 {
+		return nil
+	}
+
+	tx, err := d.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin false positive transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	fpVal := 0
+	if fp {
+		fpVal = 1
+	}
+
+	stmt, err := tx.Prepare(`UPDATE tbl_scan_results SET false_positive = ? WHERE scan_instance_id = ? AND hash = ?`)
+	if err != nil {
+		return fmt.Errorf("prepare false positive update: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, hash := range hashes {
+		if _, err := stmt.Exec(fpVal, scanID, hash); err != nil {
+			return fmt.Errorf("update false positive for %s: %w", hash, err)
+		}
+	}
+
+	return tx.Commit()
+}

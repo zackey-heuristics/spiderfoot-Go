@@ -178,5 +178,6 @@ docs/_build/
 ######
 /spiderfoot
 *.test
-vendor/
+/vendor/
 coverage.out
+spiderfoot-darwin-*

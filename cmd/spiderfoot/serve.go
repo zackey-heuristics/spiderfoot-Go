@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/db"
+	_ "github.com/zackey-heuristics/spiderfoot-Go/internal/modules"
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/webui"
 )
 

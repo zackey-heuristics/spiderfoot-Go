@@ -1,0 +1,45 @@
+{{define "content"}}
+<h2>Scans <img id="loader" src="{{.DocRoot}}/static/img/loader.gif" style="height:20px;display:none;"></h2>
+
+<div class="btn-toolbar" style="margin-bottom:10px;">
+  <div class="btn-group">
+    <button class="btn btn-default btn-sm" onclick="scanListReload()"><span class="glyphicon glyphicon-refresh"></span> Refresh</button>
+  </div>
+  <div class="btn-group">
+    <button class="btn btn-danger btn-sm" onclick="stopSelected()"><span class="glyphicon glyphicon-stop"></span> Stop Selected</button>
+    <button class="btn btn-danger btn-sm" onclick="deleteSelected()"><span class="glyphicon glyphicon-trash"></span> Delete Selected</button>
+  </div>
+  <div class="btn-group">
+    <button class="btn btn-default btn-sm" onclick="rerunSelected()"><span class="glyphicon glyphicon-repeat"></span> Re-run Selected</button>
+  </div>
+</div>
+
+<div class="btn-group btn-group-sm" style="margin-bottom:10px;">
+  <button class="btn btn-default active" onclick="filterScans('all', this)">All</button>
+  <button class="btn btn-default" onclick="filterScans('running', this)">Running</button>
+  <button class="btn btn-default" onclick="filterScans('finished', this)">Finished</button>
+  <button class="btn btn-default" onclick="filterScans('failed', this)">Failed/Aborted</button>
+</div>
+
+<div id="scancontent">
+  <table id="scanlist" class="tablesorter" style="width:100%;">
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="checkall" onclick="toggleCheckAll(this)"></th>
+        <th>Name</th>
+        <th>Target</th>
+        <th>Started</th>
+        <th>Finished</th>
+        <th>Status</th>
+        <th>Elements</th>
+      </tr>
+    </thead>
+    <tbody id="scanlist-tbody">
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="{{.DocRoot}}/static/js/spiderfoot.scanlist.js"></script>
+{{end}}

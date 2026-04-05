@@ -1,0 +1,70 @@
+{{define "content"}}
+<h2>New Scan</h2>
+
+<div class="row">
+  <div class="col-md-8">
+    <form id="startscan-form">
+      <div class="form-group">
+        <label for="scanname">Scan Name</label>
+        <input type="text" class="form-control" id="scanname" placeholder="My Scan">
+      </div>
+      <div class="form-group">
+        <label for="scantarget">Scan Target</label>
+        <input type="text" class="form-control" id="scantarget" placeholder="example.com / 1.2.3.4 / user@example.com">
+        <p class="help-block">Supported: domain, IP address, hostname, email, subnet, username</p>
+      </div>
+
+      <ul class="nav nav-tabs" id="moduletabs">
+        <li class="active"><a href="#byusecase" data-toggle="tab">By Use Case</a></li>
+        <li><a href="#bytype" data-toggle="tab">By Required Data</a></li>
+        <li><a href="#bymodule" data-toggle="tab">By Module</a></li>
+      </ul>
+
+      <div class="tab-content" style="padding-top:15px;">
+        <div class="tab-pane active" id="byusecase">
+          <div class="radio"><label><input type="radio" name="usecase" value="all" checked> <strong>All</strong> — Enable all modules</label></div>
+          <div class="radio"><label><input type="radio" name="usecase" value="Footprint"> <strong>Footprint</strong> — Understand the target's network footprint</label></div>
+          <div class="radio"><label><input type="radio" name="usecase" value="Investigate"> <strong>Investigate</strong> — Best for investigating a target</label></div>
+          <div class="radio"><label><input type="radio" name="usecase" value="Passive"> <strong>Passive</strong> — Passive-only collection, no direct contact with target</label></div>
+        </div>
+
+        <div class="tab-pane" id="bytype">
+          <p>Select the types of data you want to collect:</p>
+          <div id="typelist"></div>
+        </div>
+
+        <div class="tab-pane" id="bymodule">
+          <div style="margin-bottom:10px;">
+            <button type="button" class="btn btn-xs btn-default" onclick="selectAllModules()">Select All</button>
+            <button type="button" class="btn btn-xs btn-default" onclick="deselectAllModules()">Deselect All</button>
+          </div>
+          <div id="modulelist"></div>
+        </div>
+      </div>
+
+      <hr>
+      <button type="submit" class="btn btn-primary btn-lg"><span class="glyphicon glyphicon-play"></span> Run Scan Now</button>
+    </form>
+  </div>
+  <div class="col-md-4">
+    <div class="panel panel-info">
+      <div class="panel-heading">Supported Target Types</div>
+      <div class="panel-body">
+        <ul>
+          <li>Domain name (e.g. example.com)</li>
+          <li>IP address (e.g. 1.2.3.4)</li>
+          <li>Hostname (e.g. mail.example.com)</li>
+          <li>Subnet (e.g. 1.2.3.0/24)</li>
+          <li>Email address</li>
+          <li>Phone number</li>
+          <li>Username</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+{{end}}
+
+{{define "scripts"}}
+<script src="{{.DocRoot}}/static/js/spiderfoot.newscan.js"></script>
+{{end}}
