@@ -82,16 +82,46 @@ go doc ./...
 go test -run TestName ./internal/event/...
 ```
 
+## Phase Status
+
+- **Phase 1** (DONE) — Core framework: event bus, module system, scan orchestrator, SQLite storage, REST API skeleton, CLI, CI
+- **Phase 2** (IN PROGRESS) — Full Web UI: browser-based scan creation/management/results matching Python SpiderFoot
+- **Phase 3** (TODO) — Module porting: convert Python OSINT modules to Go
+- **Phase 4** (TODO) — Correlation engine, advanced features
+
+## Phase 2: Web UI — Key Reference
+
+The Python web UI (`sfwebui.py`, ~1900 lines) provides:
+
+### Pages
+- **New Scan** (`/newscan`) — target input, module selection (by use case / data type / individual), scan name
+- **Scan List** (`/`) — dashboard with status badges, batch stop/delete/rerun/export
+- **Scan Info** (`/scaninfo?id=<id>`) — results table, summary, correlations, network graph (Sigma.js), search, export
+- **Settings** (`/opts`) — global config + per-module settings with API key indicators
+
+### Frontend Stack (Python version)
+- Bootstrap 3, jQuery, D3.js (charts), Sigma.js (graph), TableSorter, AlertifyJS
+- Mako templates (server-side rendering)
+
+### Go Implementation Approach
+- `html/template` for server-side rendering (not Mako)
+- Embed static assets via `go:embed` in `internal/webui/static/` and `internal/webui/templates/`
+- Keep the same JS libraries (Bootstrap, jQuery, D3, Sigma) for frontend parity
+- REST API endpoints return JSON; HTML pages use AJAX to fetch data
+- Scan start/stop managed via API endpoints that interact with the scan orchestrator
+
 ## Original Python Architecture (Reference)
 
 The Python SpiderFoot consists of:
 - `sf.py` — CLI entry point, starts CherryPy web server
 - `sflib.py` — core SpiderFoot class (config, helpers, HTTP client)
 - `sfscan.py` — scan runner
-- `sfwebui.py` — web UI handlers
+- `sfwebui.py` — web UI handlers (~1900 lines, 40+ endpoints)
 - `spiderfoot/db.py` — SQLite database layer
 - `spiderfoot/event.py` — event type definitions
 - `spiderfoot/plugin.py` — base module class
 - `spiderfoot/target.py` — scan target abstraction
 - `spiderfoot/correlation.py` — post-scan correlation
 - `modules/sfp_*.py` — 234 OSINT modules
+- `spiderfoot/templates/*.tmpl` — Mako HTML templates
+- `spiderfoot/static/` — CSS, JS, images (Bootstrap, jQuery, D3, Sigma.js)

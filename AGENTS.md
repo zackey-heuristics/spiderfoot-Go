@@ -98,6 +98,14 @@ Run after implementation:
 3. golangci-lint run ./...
 ```
 
+## Phase 2 Notes
+
+Phase 2 involves HTML templates, JavaScript, and CSS alongside Go code.
+- Codex implementation tasks may include writing `.html`, `.js`, and `.css` files.
+- Claude Code should verify templates render correctly in addition to Go build/test.
+- Use the Codex plugin (`/codex:adversarial-review`) for design-level review.
+- For large frontend tasks, Claude Code may implement directly if Codex sandbox limitations prevent file writes.
+
 ## Adversarial Review Template (Claude Code → Codex)
 
 ```
