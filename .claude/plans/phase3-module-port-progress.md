@@ -15,8 +15,11 @@ without replaying the original planning conversation.
 | 2 — Network/SSL/WHOIS/Web | `b7113f42` | portscan_tcp, sslcert, whois, spider, webframework, webserver, pageinfo, strangeheaders | 8 modules |
 | 3 — Content text extractors | `1d112a87` | email, bitcoin, ethereum, creditcard, iban, phone, names, errors, binstring, hashes, base64, cookie | 12 modules |
 | 4 — Content/Web/File | `531a435f` | company, countryname, intfiles, junkfiles, webanalytics, pgp, similar, filemeta | 8 modules |
+| 5 — Public DNS Resolvers | (pending) | adguard_dns, cleanbrowsing, cloudflaredns, comodo, opendns, quad9, yandexdns | 7 modules (shared `publicDNSResolver` generic) |
 
-**Total registered modules: 36** (dns_resolve + stor_db pre-existing, +34 new)
+**Total registered modules: 43** (dns_resolve + stor_db pre-existing, +41 new)
+
+Also added event type `BLACKLISTED_AFFILIATE_INTERNET_NAME` which was missing.
 
 ## Remaining Batches (per original plan)
 
