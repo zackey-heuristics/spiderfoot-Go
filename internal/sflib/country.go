@@ -62,3 +62,12 @@ func CountryCodes() map[string]string {
 	}
 	return result
 }
+
+// AllCountryNames returns the list of all known country names.
+func AllCountryNames() []string {
+	out := make([]string, 0, len(countryCodes))
+	for _, name := range countryCodes {
+		out = append(out, name)
+	}
+	return out
+}
