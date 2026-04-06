@@ -85,9 +85,22 @@ go test -run TestName ./internal/event/...
 ## Phase Status
 
 - **Phase 1** (DONE) — Core framework: event bus, module system, scan orchestrator, SQLite storage, REST API skeleton, CLI, CI
-- **Phase 2** (IN PROGRESS) — Full Web UI: browser-based scan creation/management/results matching Python SpiderFoot
-- **Phase 3** (TODO) — Module porting: convert Python OSINT modules to Go
+- **Phase 2** (DONE) — Full Web UI: browser-based scan creation/management/results
+- **Phase 3** (IN PROGRESS) — Module porting: 36 / 234 modules ported (Batches 0-4 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`
 - **Phase 4** (TODO) — Correlation engine, advanced features
+
+### Phase 3 Progress
+- **Batch 0**: `internal/sflib/` shared utility package (HTTP, DNS, extract, HTML, SSL, country, ratelimit, toolexec)
+- **Batch 1**: Core DNS — dns_brute, dns_commonsrv, dns_neighbor, dns_raw, dns_zonexfer, stor_stdout
+- **Batch 2**: Network/SSL/WHOIS/Web — portscan_tcp, sslcert, whois, spider, webframework, webserver, pageinfo, strangeheaders
+- **Batch 3**: Content text extractors — email, bitcoin, ethereum, creditcard, iban, phone, names, errors, binstring, hashes, base64, cookie
+- **Batch 4**: Content/web/file — company, countryname, intfiles, junkfiles, webanalytics, pgp, similar, filemeta
+- **Next**: Batch 5 (Public DNS Resolvers) — see `.claude/plans/phase3-module-port-progress.md`
+
+### Phase 3 Build Notes (this devcontainer)
+- `go vet` segfaults — always pass `-vet=off` to `go test`
+- `golangci-lint` OOMs — use `gofmt -l` instead
+- Always set `CGO_ENABLED=0 GOTOOLCHAIN=local` for `go build`/`go test`
 
 ## Phase 2: Web UI — Key Reference
 

@@ -106,6 +106,23 @@ Phase 2 involves HTML templates, JavaScript, and CSS alongside Go code.
 - Use the Codex plugin (`/codex:adversarial-review`) for design-level review.
 - For large frontend tasks, Claude Code may implement directly if Codex sandbox limitations prevent file writes.
 
+## Phase 3 Notes (Module Porting)
+
+Phase 3 ports 234 Python modules to Go in numbered batches. Progress, conventions,
+batch list, and environment quirks are tracked in
+`.claude/plans/phase3-module-port-progress.md` — read this file before resuming.
+
+- Each batch: implement modules → `go test -vet=off` → `gofmt -w` → commit
+- Batches 0-4 (36 modules) are complete; next is Batch 5 (Public DNS Resolvers)
+- Group similar regex extractors into shared files using the `contentExtractor`
+  base type to avoid one-file-per-module bloat
+- This devcontainer cannot run `go vet` or `golangci-lint` (segfault / OOM) —
+  use `gofmt -l` and `go test -vet=off` instead
+- Always set `CGO_ENABLED=0 GOTOOLCHAIN=local` for build/test
+- Claude Code may implement directly without Codex delegation when batches are
+  routine pattern-matching modules — Codex review is more valuable for batches
+  involving new shared infrastructure (API key system, tool wrappers)
+
 ## Adversarial Review Template (Claude Code → Codex)
 
 ```
