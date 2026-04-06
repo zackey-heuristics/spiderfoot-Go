@@ -113,7 +113,7 @@ batch list, and environment quirks are tracked in
 `.claude/plans/phase3-module-port-progress.md` — read this file before resuming.
 
 - Each batch: implement modules → `go test -vet=off` → `gofmt -w` → commit
-- Batches 0-4 (36 modules) are complete; next is Batch 5 (Public DNS Resolvers)
+- Batches 0-7 (58 modules) are complete; next is Batch 8 (Free APIs Part 2: search engines, sublist3r, stackoverflow, searchcode)
 - Group similar regex extractors into shared files using the `contentExtractor`
   base type to avoid one-file-per-module bloat
 - This devcontainer cannot run `go vet` or `golangci-lint` (segfault / OOM) —
