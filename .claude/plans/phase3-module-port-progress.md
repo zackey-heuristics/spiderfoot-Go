@@ -16,9 +16,16 @@ without replaying the original planning conversation.
 | 3 — Content text extractors | `1d112a87` | email, bitcoin, ethereum, creditcard, iban, phone, names, errors, binstring, hashes, base64, cookie | 12 modules |
 | 4 — Content/Web/File | `531a435f` | company, countryname, intfiles, junkfiles, webanalytics, pgp, similar, filemeta | 8 modules |
 | 5 — Public DNS Resolvers | `2a909f11` | adguard_dns, cleanbrowsing, cloudflaredns, comodo, opendns, quad9, yandexdns | 7 modules (shared `publicDNSResolver` generic) |
-| 6 — DNS/IP Blacklists | (pending) | spamhaus, sorbs, spamcop, uceprotect, dronebl, surbl | 6 modules (shared `ipDNSBL` generic; surbl also handles domains) |
+| 6 — DNS/IP Blacklists | `ed1d6721` | spamhaus, sorbs, spamcop, uceprotect, dronebl, surbl | 6 modules (shared `ipDNSBL` generic; surbl also handles domains) |
+| 7 — Free APIs Part 1 | (pending) | hackertarget, crt, certspotter, dnsdumpster, commoncrawl, archiveorg, bgpview, ripe, robtex | 9 modules in one file `free_apis.go` |
 
-**Total registered modules: 49** (dns_resolve + stor_db pre-existing, +47 new)
+**Total registered modules: 58** (dns_resolve + stor_db pre-existing, +56 new)
+
+Batch 7 notes:
+- Implementations are pragmatic: each module ports only the most useful single query path from the Python original. Netblock expansion, multi-page pagination, and DNS re-resolution are omitted for now.
+- Added event types for archive.org: `INTERESTING_FILE_HISTORIC`, `URL_{PASSWORD,FORM,FLASH,STATIC,JAVA_APPLET,UPLOAD,JAVASCRIPT,WEB_FRAMEWORK}_HISTORIC`.
+- `dnsdumpster` is best-effort: the Python module does a CSRF/POST dance that is brittle and often captcha-guarded. The Go port only scrapes the landing page for now.
+- `certspotter` public API works without an API key for small queries; higher usage needs Basic auth (deferred to API-key batches).
 
 Also added event type `BLACKLISTED_AFFILIATE_INTERNET_NAME` which was missing.
 
