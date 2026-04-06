@@ -52,6 +52,15 @@ func (s *seenSet) add(key string) bool {
 	return false
 }
 
+// contains reports whether key has been recorded, without marking it.
+// This is used so callers can dedupe only after a successful fetch,
+// allowing transient HTTP failures to be retried on later events.
+func (s *seenSet) contains(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.m[key]
+}
+
 // clear empties the set.
 func (s *seenSet) clear() {
 	s.mu.Lock()

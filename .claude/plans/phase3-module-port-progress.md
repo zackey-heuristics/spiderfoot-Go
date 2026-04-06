@@ -17,9 +17,34 @@ without replaying the original planning conversation.
 | 4 — Content/Web/File | `531a435f` | company, countryname, intfiles, junkfiles, webanalytics, pgp, similar, filemeta | 8 modules |
 | 5 — Public DNS Resolvers | `2a909f11` | adguard_dns, cleanbrowsing, cloudflaredns, comodo, opendns, quad9, yandexdns | 7 modules (shared `publicDNSResolver` generic) |
 | 6 — DNS/IP Blacklists | `ed1d6721` | spamhaus, sorbs, spamcop, uceprotect, dronebl, surbl | 6 modules (shared `ipDNSBL` generic; surbl also handles domains) |
-| 7 — Free APIs Part 1 | (pending) | hackertarget, crt, certspotter, dnsdumpster, commoncrawl, archiveorg, bgpview, ripe, robtex | 9 modules in one file `free_apis.go` |
+| 7 — Free APIs Part 1 | `248504c9` | hackertarget, crt, certspotter, dnsdumpster, commoncrawl, archiveorg, bgpview, ripe, robtex | 9 modules in one file `free_apis.go` |
+| 8 — Free APIs Part 2 | (pending) | googlesearch, bingsearch, duckduckgo, sublist3r, stackoverflow, searchcode | 6 modules in `search_apis.go` |
+| 9 — Phishing/Reputation | (pending) | phishtank, openphish, emergingthreats, threatcrowd, phishstats | 5 modules in `phishing_reputation.go` (shared `hostFeed`/`ipFeed` patterns) |
+| 10 — Social/Username | (pending) | social, accounts, github, twitter, flickr, keybase, gravatar, slideshare | 8 modules in `social_modules.go` |
 
-**Total registered modules: 58** (dns_resolve + stor_db pre-existing, +56 new)
+**Total registered modules: 77** (dns_resolve + stor_db pre-existing, +75 new)
+
+Batch 10 notes:
+- `social` is regex-only on `LINKED_URL_EXTERNAL`; emits `SOCIAL_MEDIA` (`"<service>: <url>"`) plus `USERNAME`. 9 platforms covered (LinkedIn, GitHub, Bitbucket, GitLab, Facebook, YouTube, Twitter, SlideShare, Instagram).
+- `accounts` is **pragmatic**: lazy-fetches the WhatsMyName JSON once, then sequentially probes the **first 50** sites per username (`accountsMaxSites`). Python uses 20 worker threads with no cap — promote to a worker pool when scan throughput matters.
+- `twitter` and `slideshare` rely on legacy HTML scraping; the upstream pages are likely broken/changed since the Python module was written. Best-effort.
+- `flickr` extracts the `site_key` from the public homepage at runtime (same as Python); a single search-page query is performed (no pagination).
+- `keybase` parses `proofs_summary.all`, `cryptocurrency_addresses.bitcoin`, and the primary PGP bundle.
+- `gravatar` requires `crypto/md5` for the email hash. No `EMAILADDR_GENERIC`/IM expansion (deferred).
+- **NOTE for future test authors**: `event.New` requires a non-nil source for non-ROOT events. Construct a `event.ROOT` event first (see `TestSocialExtractor`).
+
+Batch 9 notes:
+- Introduces two shared generics: `hostFeed` (URL→hostname blocklists like phishtank/openphish) and `ipFeed` (IP blocklists like emergingthreats). Both lazily fetch the feed via a `fetchOnce` helper and reset on `Finish()` so each scan re-downloads.
+- Netblock CIDR expansion is **not** performed for `NETBLOCK_MEMBER`/`NETBLOCK_OWNER` events — only direct IP membership is checked. Promote to a CIDR walker when needed.
+- threatcrowd is implemented best-effort; the upstream service has been intermittently offline since 2022, so callers should not rely on it.
+- phishstats hits the `_where=(ip,eq,X)&_size=1` filter form. Only matches when the API echoes the exact IP back.
+
+Batch 8 notes:
+- googlesearch / bingsearch require API credentials via opts (`google_api_key`+`google_cse_id`, `bing_api_key`). Without keys they no-op gracefully — full API-key config wiring is still deferred to batches 11-15.
+- bingsearch uses `net/http` directly because `sflib.HTTPClient` does not yet expose custom request headers (Bing requires `Ocp-Apim-Subscription-Key`). Consider extending HTTPClient with a `Headers` option later.
+- duckduckgo only emits `DESCRIPTION_ABSTRACT` / `DESCRIPTION_CATEGORY` (no AFFILIATE_DESCRIPTION_* event types exist yet — Python-only). Affiliate handling deferred.
+- stackoverflow ports the `/search/excerpts` query and harvests emails via `sflib.ExtractEmails`. The Python module's secondary `/questions/{id}` IP/username extraction is omitted.
+- searchcode fetches only the first results page (p=0, per_page=20). Python module paginates up to 10 pages.
 
 Batch 7 notes:
 - Implementations are pragmatic: each module ports only the most useful single query path from the Python original. Netblock expansion, multi-page pagination, and DNS re-resolution are omitted for now.
