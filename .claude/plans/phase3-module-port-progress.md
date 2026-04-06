@@ -15,11 +15,14 @@ without replaying the original planning conversation.
 | 2 — Network/SSL/WHOIS/Web | `b7113f42` | portscan_tcp, sslcert, whois, spider, webframework, webserver, pageinfo, strangeheaders | 8 modules |
 | 3 — Content text extractors | `1d112a87` | email, bitcoin, ethereum, creditcard, iban, phone, names, errors, binstring, hashes, base64, cookie | 12 modules |
 | 4 — Content/Web/File | `531a435f` | company, countryname, intfiles, junkfiles, webanalytics, pgp, similar, filemeta | 8 modules |
-| 5 — Public DNS Resolvers | (pending) | adguard_dns, cleanbrowsing, cloudflaredns, comodo, opendns, quad9, yandexdns | 7 modules (shared `publicDNSResolver` generic) |
+| 5 — Public DNS Resolvers | `2a909f11` | adguard_dns, cleanbrowsing, cloudflaredns, comodo, opendns, quad9, yandexdns | 7 modules (shared `publicDNSResolver` generic) |
+| 6 — DNS/IP Blacklists | (pending) | spamhaus, sorbs, spamcop, uceprotect, dronebl, surbl | 6 modules (shared `ipDNSBL` generic; surbl also handles domains) |
 
-**Total registered modules: 43** (dns_resolve + stor_db pre-existing, +41 new)
+**Total registered modules: 49** (dns_resolve + stor_db pre-existing, +47 new)
 
 Also added event type `BLACKLISTED_AFFILIATE_INTERNET_NAME` which was missing.
+
+Batch 6 note: Python plan estimated "15" DNSBL modules, but only 6 pure DNSBL-pattern modules exist in Python SpiderFoot (spamhaus, sorbs, spamcop, uceprotect, dronebl, surbl). Other "blocklist" modules (blocklistde, abusech, voipbl, coinblocker, stevenblack_hosts, phishstats, etc.) download HTTP text lists rather than using DNSBL zones and will be ported in a later batch as an `httpBlocklist` pattern. `abusix` and `honeypot` are DNSBL but require an API key — deferred to the API-key batches.
 
 ## Remaining Batches (per original plan)
 
