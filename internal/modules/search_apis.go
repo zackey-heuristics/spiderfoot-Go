@@ -117,9 +117,15 @@ type gcsResponse struct {
 
 // HandleEvent runs a site:<domain> query against Google CSE.
 func (m *GoogleSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	if m.apiKey == "" || m.cseID == "" {
 		return nil, nil
 	}
@@ -130,10 +136,10 @@ func (m *GoogleSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*ev
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — mark as done so we don't retry on later
-	// events for the same indicator. Transient failures above fall through
-	// without marking, allowing a later event to retry.
-	m.seen.add(evt.Data)
+	// Upstream responded 200 — commit the reservation made at entry.
+	// Transient failures above fall through to the defer which releases
+	// the reservation so a later event for the same indicator can retry.
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "googlesearch", evt); err == nil {
 		results = append(results, e)
@@ -199,9 +205,15 @@ type bingResponse struct {
 
 // HandleEvent runs a site:<domain> query against Bing.
 func (m *BingSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	if m.apiKey == "" {
 		return nil, nil
 	}
@@ -225,9 +237,8 @@ func (m *BingSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil {
 		return nil, nil
 	}
-	// Upstream returned 200 — mark as done. Transient errors above fall
-	// through without marking, allowing retry on a later event.
-	m.seen.add(evt.Data)
+	// Upstream returned 200 — commit the reservation made at entry.
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "bingsearch", evt); err == nil {
 		results = append(results, e)
@@ -289,18 +300,24 @@ type ddgResponse struct {
 
 // HandleEvent fetches an Instant Answer for the event domain.
 func (m *DuckDuckGo) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	u := "https://api.duckduckgo.com/?q=" + url.QueryEscape(evt.Data) + "&format=json&pretty=1"
 	resp, err := searchAPIClient.FetchURL(ctx, u)
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — mark as done so we don't retry on later
-	// events for the same indicator. Transient failures above fall through
-	// without marking, allowing a later event to retry.
-	m.seen.add(evt.Data)
+	// Upstream responded 200 — commit the reservation made at entry.
+	// Transient failures above fall through to the defer which releases
+	// the reservation so a later event for the same indicator can retry.
+	committed = true
 	var payload ddgResponse
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil || payload.Heading == "" {
 		return nil, nil
@@ -352,19 +369,25 @@ func (m *Sublist3r) ProducedEvents() []event.Type {
 
 // HandleEvent fetches the subdomain list and emits matches.
 func (m *Sublist3r) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	target := strings.ToLower(evt.Data)
 	u := "https://api.sublist3r.com/search.php?domain=" + url.QueryEscape(evt.Data)
 	resp, err := searchAPIClient.FetchURL(ctx, u)
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — mark as done so we don't retry on later
-	// events for the same indicator. Transient failures above fall through
-	// without marking, allowing a later event to retry.
-	m.seen.add(evt.Data)
+	// Upstream responded 200 — commit the reservation made at entry.
+	// Transient failures above fall through to the defer which releases
+	// the reservation so a later event for the same indicator can retry.
+	committed = true
 	var hosts []string
 	if err := json.Unmarshal([]byte(resp.Body), &hosts); err != nil {
 		return nil, nil
@@ -424,18 +447,24 @@ type stackResponse struct {
 
 // HandleEvent runs a /search/excerpts query and harvests emails.
 func (m *StackOverflow) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	u := "https://api.stackexchange.com/2.3/search/excerpts?order=desc&q=" + url.QueryEscape(evt.Data) + "&site=stackoverflow"
 	resp, err := searchAPIClient.FetchURL(ctx, u)
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — mark as done so we don't retry on later
-	// events for the same indicator. Transient failures above fall through
-	// without marking, allowing a later event to retry.
-	m.seen.add(evt.Data)
+	// Upstream responded 200 — commit the reservation made at entry.
+	// Transient failures above fall through to the defer which releases
+	// the reservation so a later event for the same indicator can retry.
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "stackoverflow", evt); err == nil {
 		results = append(results, e)
@@ -504,19 +533,25 @@ type searchcodeResponse struct {
 
 // HandleEvent fetches first page of search results and harvests data.
 func (m *SearchCode) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	target := strings.ToLower(evt.Data)
 	u := "https://searchcode.com/api/codesearch_I/?q=" + url.QueryEscape(evt.Data) + "&p=0&per_page=20"
 	resp, err := searchAPIClient.FetchURL(ctx, u)
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — mark as done so we don't retry on later
-	// events for the same indicator. Transient failures above fall through
-	// without marking, allowing a later event to retry.
-	m.seen.add(evt.Data)
+	// Upstream responded 200 — commit the reservation made at entry.
+	// Transient failures above fall through to the defer which releases
+	// the reservation so a later event for the same indicator can retry.
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "searchcode", evt); err == nil {
 		results = append(results, e)

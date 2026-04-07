@@ -2,10 +2,30 @@ package modules
 
 import (
 	"context"
+	"errors"
+	"net"
 	"testing"
 
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/event"
 )
+
+func TestIsDNSNotFoundErr(t *testing.T) {
+	cases := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"nil", nil, true},
+		{"not-found DNS error", &net.DNSError{IsNotFound: true}, true},
+		{"transient DNS error", &net.DNSError{IsNotFound: false}, false},
+		{"plain error", errors.New("boom"), false},
+	}
+	for _, c := range cases {
+		if got := isDNSNotFoundErr(c.err); got != c.want {
+			t.Errorf("%s: got %v want %v", c.name, got, c.want)
+		}
+	}
+}
 
 var dnsblNames = []string{"spamhaus", "sorbs", "spamcop", "uceprotect", "dronebl", "surbl"}
 

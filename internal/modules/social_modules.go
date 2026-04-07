@@ -82,6 +82,12 @@ func (m *Social) HandleEvent(_ context.Context, evt *event.Event) ([]*event.Even
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	var results []*event.Event
 	for _, p := range socialPatterns {
 		match := p.re.FindStringSubmatch(evt.Data)
@@ -95,6 +101,8 @@ func (m *Social) HandleEvent(_ context.Context, evt *event.Event) ([]*event.Even
 			results = append(results, e)
 		}
 	}
+	// Pure regex work, no network — mark seen unconditionally at the end.
+	committed = true
 	return results, nil
 }
 
@@ -171,10 +179,19 @@ func (m *Accounts) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	ds, err := m.loadDataset(ctx)
 	if err != nil || ds == nil {
 		return nil, nil
 	}
+	// Dataset loaded — mark as processed. Per-site probe errors below
+	// are best-effort and do not affect the overall indicator state.
+	committed = true
 	var results []*event.Event
 	count := 0
 	for _, site := range ds.Sites {
@@ -282,6 +299,12 @@ func (m *GitHub) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	username := evt.Data
 	if evt.Type == event.SOCIAL_MEDIA {
 		if !strings.HasPrefix(evt.Data, "GitHub:") {
@@ -296,6 +319,7 @@ func (m *GitHub) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var user githubUser
 	if err := json.Unmarshal([]byte(resp.Body), &user); err != nil {
 		return nil, nil
@@ -365,6 +389,12 @@ func (m *Twitter) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	if !strings.HasPrefix(evt.Data, "Twitter:") {
 		return nil, nil
 	}
@@ -377,6 +407,7 @@ func (m *Twitter) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "twitter", evt); err == nil {
 		results = append(results, e)
@@ -423,6 +454,12 @@ func (m *Flickr) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	homeResp, err := socialClient.FetchURL(ctx, "https://www.flickr.com/")
 	if err != nil || homeResp.StatusCode != 200 {
 		return nil, nil
@@ -437,6 +474,7 @@ func (m *Flickr) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "flickr", evt); err == nil {
 		results = append(results, e)
@@ -533,6 +571,12 @@ func (m *Keybase) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	var url string
 	if evt.Type == event.USERNAME {
 		url = "https://keybase.io/_/api/1.0/user/lookup.json?usernames=" + evt.Data
@@ -543,6 +587,7 @@ func (m *Keybase) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var payload keybaseResponse
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil || payload.Status.Code != 0 {
 		return nil, nil
@@ -641,12 +686,19 @@ func (m *Gravatar) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	sum := md5.Sum([]byte(strings.ToLower(strings.TrimSpace(evt.Data))))
 	hash := hex.EncodeToString(sum[:])
 	resp, err := socialClient.FetchURL(ctx, "https://secure.gravatar.com/"+hash+".json")
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var payload gravatarResponse
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
 		return nil, nil
@@ -729,6 +781,12 @@ func (m *SlideShare) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	if !strings.HasPrefix(evt.Data, "SlideShare:") {
 		return nil, nil
 	}
@@ -740,6 +798,7 @@ func (m *SlideShare) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "slideshare", evt); err == nil {
 		results = append(results, e)

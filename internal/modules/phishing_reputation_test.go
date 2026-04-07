@@ -4,8 +4,10 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/event"
 )
@@ -121,6 +123,68 @@ func TestFetchOnceRetriesOnFailure(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(&calls); got != 2 {
 		t.Errorf("expected 2 server calls, got %d", got)
+	}
+}
+
+// TestHostFeedConcurrentDedup verifies that two concurrent goroutines
+// handling the same indicator only result in ONE feed fetch and ONE
+// emitted blacklist event — i.e. dedup is atomic at HandleEvent entry.
+func TestHostFeedConcurrentDedup(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		// Slow response to widen the race window.
+		time.Sleep(50 * time.Millisecond)
+		_, _ = w.Write([]byte("phish_id,url,phish_detail_url\n1,http://evil.example.com/a,x\n"))
+	}))
+	defer srv.Close()
+
+	m := &hostFeed{
+		name:    "phishtank",
+		summary: "test",
+		url:     srv.URL,
+		parser:  parsePhishtank,
+	}
+	root, _ := event.New(event.ROOT, "example.com", "", nil)
+	evt, _ := event.New(event.INTERNET_NAME, "evil.example.com", "test", root)
+
+	const N = 10
+	type result struct {
+		out []*event.Event
+		err error
+	}
+	results := make(chan result, N)
+	var wg sync.WaitGroup
+	for i := 0; i < N; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := m.HandleEvent(context.Background(), evt)
+			results <- result{out, err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	emitted := 0
+	for r := range results {
+		if r.err != nil {
+			t.Errorf("unexpected error: %v", r.err)
+		}
+		for _, e := range r.out {
+			if e.Type == event.BLACKLISTED_INTERNET_NAME {
+				emitted++
+			}
+		}
+	}
+	if emitted != 1 {
+		t.Errorf("expected exactly 1 BLACKLISTED_INTERNET_NAME emission, got %d", emitted)
+	}
+	// Note: feed itself is cached by fetchOnce so a single fetch is
+	// sufficient. The point is that the work is not duplicated under
+	// concurrency.
+	if got := atomic.LoadInt32(&calls); got > 1 {
+		t.Errorf("expected at most 1 server call, got %d", got)
 	}
 }
 

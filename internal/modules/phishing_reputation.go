@@ -137,9 +137,15 @@ func (m *hostFeed) ProducedEvents() []event.Type {
 
 // HandleEvent fetches the feed (cached) and checks membership.
 func (m *hostFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	hits, ok := hostHitTypes[evt.Type]
 	if !ok {
 		return nil, nil
@@ -148,10 +154,10 @@ func (m *hostFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if err != nil || body == "" {
 		return nil, nil
 	}
-	// Feed loaded successfully — mark indicator as checked. Transient
-	// feed failures above fall through without marking so a later event
-	// can retry the feed load.
-	m.seen.add(evt.Data)
+	// Feed loaded successfully — commit the reservation made at entry.
+	// Transient feed failures above fall through to the defer which
+	// releases the reservation so a later event can retry.
+	committed = true
 	hosts := m.parser(body)
 	if !hosts[strings.ToLower(evt.Data)] {
 		return nil, nil
@@ -253,9 +259,15 @@ func parseIPList(body string) map[string]bool {
 // HandleEvent fetches the IP list and checks for IP membership.
 // Netblock CIDR expansion is not performed.
 func (m *ipFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	hits, ok := ipHitTypes[evt.Type]
 	if !ok {
 		return nil, nil
@@ -269,8 +281,8 @@ func (m *ipFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if err != nil || body == "" {
 		return nil, nil
 	}
-	// Feed loaded successfully — mark indicator as checked.
-	m.seen.add(evt.Data)
+	// Feed loaded successfully — commit the reservation made at entry.
+	committed = true
 	ips := parseIPList(body)
 	if !ips[evt.Data] {
 		return nil, nil
@@ -343,9 +355,15 @@ var tcOutputType = map[event.Type]event.Type{
 // HandleEvent picks the right ThreatCrowd endpoint and emits a malicious
 // event when the API reports negative votes.
 func (m *ThreatCrowd) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	out, ok := tcOutputType[evt.Type]
 	if !ok {
 		return nil, nil
@@ -363,9 +381,10 @@ func (m *ThreatCrowd) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — mark as done. Below this line a malformed
-	// response or a non-malicious verdict still counts as "looked up".
-	m.seen.add(evt.Data)
+	// Upstream responded 200 — commit the reservation made at entry.
+	// Below this line a malformed response or a non-malicious verdict
+	// still counts as "looked up" and should not be retried.
+	committed = true
 	var payload threatCrowdResponse
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil || payload.Votes >= 0 {
 		return nil, nil
@@ -414,9 +433,15 @@ func (m *PhishStats) ProducedEvents() []event.Type {
 
 // HandleEvent queries the phishing endpoint for the event IP.
 func (m *PhishStats) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.contains(evt.Data) {
+	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	hits, ok := ipHitTypes[evt.Type]
 	if !ok {
 		return nil, nil
@@ -429,8 +454,8 @@ func (m *PhishStats) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — mark as done.
-	m.seen.add(evt.Data)
+	// Upstream responded 200 — commit the reservation made at entry.
+	committed = true
 	var payload []struct {
 		IP string `json:"ip"`
 	}

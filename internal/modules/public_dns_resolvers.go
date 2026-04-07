@@ -113,15 +113,32 @@ func (m *publicDNSResolver) HandleEvent(ctx context.Context, evt *event.Event) (
 		return nil, nil
 	}
 
+	// Atomically reserve the indicator. If another goroutine is
+	// already handling it (or it has been definitively processed),
+	// skip without doing duplicate DNS work.
 	if m.markSeen(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.releaseSeen(evt.Data)
+		}
+	}()
 
 	// Must resolve via default resolver to be considered a real host.
 	defCtx, defCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer defCancel()
 	addrs, err := net.DefaultResolver.LookupHost(defCtx, evt.Data)
+	if err != nil && !isDNSNotFoundErr(err) {
+		// Transient error on the default resolver — defer releases the
+		// reservation so a later event can retry.
+		return nil, nil
+	}
 	if err != nil || len(addrs) == 0 {
+		// Definitive NXDOMAIN — this isn't a real host. Keep the
+		// reservation so we don't re-query for the same non-host.
+		committed = true
 		return nil, nil
 	}
 
@@ -129,6 +146,13 @@ func (m *publicDNSResolver) HandleEvent(ctx context.Context, evt *event.Event) (
 	filCtx, filCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer filCancel()
 	fAddrs, fErr := m.resolver.LookupHost(filCtx, evt.Data)
+	if fErr != nil && !isDNSNotFoundErr(fErr) {
+		// Transient error on the filter resolver — defer releases so
+		// a later event can retry. Also avoids a false-positive
+		// blacklisting when the filter resolver is flaky.
+		return nil, nil
+	}
+	committed = true
 	if fErr == nil && len(fAddrs) > 0 {
 		return nil, nil
 	}
@@ -156,6 +180,19 @@ func (m *publicDNSResolver) Finish() error {
 	return nil
 }
 
+// releaseSeen deletes key from the dedup set so a later event can retry
+// after a transient resolver failure.
+func (m *publicDNSResolver) releaseSeen(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.seen != nil {
+		delete(m.seen, key)
+	}
+}
+
+// markSeen atomically records and checks key. Returns true if the key
+// was already present (caller should skip), false if it was newly
+// reserved (caller must call releaseSeen on transient failure).
 func (m *publicDNSResolver) markSeen(key string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

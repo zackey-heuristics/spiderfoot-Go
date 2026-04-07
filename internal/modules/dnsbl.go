@@ -9,6 +9,7 @@ package modules
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -18,6 +19,22 @@ import (
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/event"
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/module"
 )
+
+// isDNSNotFoundErr reports whether err is a definitive DNS result —
+// either a successful lookup (nil error) or an NXDOMAIN-style "not
+// found" response. Transient failures (SERVFAIL, timeout, network
+// errors) return false so callers can retry them on later events
+// instead of permanently marking an indicator as processed.
+func isDNSNotFoundErr(err error) bool {
+	if err == nil {
+		return true
+	}
+	var dnsErr *net.DNSError
+	if errors.As(err, &dnsErr) {
+		return dnsErr.IsNotFound
+	}
+	return false
+}
 
 // ipDNSBL is a generic module that checks whether an IP address is listed
 // in a specific DNSBL zone.
@@ -133,11 +150,21 @@ func (m *ipDNSBL) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 		return nil, nil
 	}
 
+	// Atomically reserve the indicator. If another goroutine is
+	// already handling it (or it has been definitively processed),
+	// skip without doing duplicate DNS work.
 	if m.markSeen(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.releaseSeen(evt.Data)
+		}
+	}()
 
 	listed := false
+	anyDefinitive := false
 	for _, zone := range m.zones {
 		host := lookupKey + "." + strings.TrimPrefix(zone, ".")
 		qCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -145,9 +172,25 @@ func (m *ipDNSBL) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 		cancel()
 		if err == nil && len(addrs) > 0 {
 			listed = true
+			anyDefinitive = true
 			break
 		}
+		if isDNSNotFoundErr(err) {
+			// Definitive "not listed" for this zone — keep looking
+			// across remaining zones, but remember we have at least
+			// one authoritative answer.
+			anyDefinitive = true
+			continue
+		}
+		// Transient error (SERVFAIL / timeout / network) — try next
+		// zone; it may still return a definitive answer.
 	}
+	if !anyDefinitive {
+		// Every zone returned a transient error — defer releases the
+		// reservation so a later event for the same indicator can retry.
+		return nil, nil
+	}
+	committed = true
 	if !listed {
 		return nil, nil
 	}
@@ -171,6 +214,20 @@ func (m *ipDNSBL) Finish() error {
 	return nil
 }
 
+// releaseSeen deletes key from the dedup set so a later event for the
+// same indicator can retry. Used to undo a markSeen reservation when
+// every zone returned a transient DNS error.
+func (m *ipDNSBL) releaseSeen(key string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.seen != nil {
+		delete(m.seen, key)
+	}
+}
+
+// markSeen atomically records and checks key. Returns true if the key
+// was already present (caller should skip), false if it was newly
+// reserved (caller must call releaseSeen on transient failure).
 func (m *ipDNSBL) markSeen(key string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()

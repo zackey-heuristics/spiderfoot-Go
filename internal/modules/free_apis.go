@@ -53,12 +53,23 @@ func (s *seenSet) add(key string) bool {
 }
 
 // contains reports whether key has been recorded, without marking it.
-// This is used so callers can dedupe only after a successful fetch,
-// allowing transient HTTP failures to be retried on later events.
+// Prefer using add + remove for reserve/release semantics instead of
+// check-then-act on contains, which is racy under concurrent delivery.
 func (s *seenSet) contains(key string) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.m[key]
+}
+
+// remove deletes key from the set. Used to release a reservation made
+// by add when a transient failure occurs and the caller wants later
+// events for the same indicator to retry.
+func (s *seenSet) remove(key string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.m != nil {
+		delete(s.m, key)
+	}
 }
 
 // clear empties the set.
@@ -99,6 +110,12 @@ func (m *HackerTarget) HandleEvent(ctx context.Context, evt *event.Event) ([]*ev
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	var results []*event.Event
 	switch evt.Type {
 	case event.IP_ADDRESS:
@@ -107,6 +124,7 @@ func (m *HackerTarget) HandleEvent(ctx context.Context, evt *event.Event) ([]*ev
 		if err != nil || resp.StatusCode != 200 {
 			return nil, nil
 		}
+		committed = true
 		for _, line := range strings.Split(resp.Body, "\n") {
 			host := strings.TrimSpace(line)
 			if host == "" || strings.HasPrefix(host, "API count exceeded") || strings.HasPrefix(host, "error") {
@@ -122,6 +140,7 @@ func (m *HackerTarget) HandleEvent(ctx context.Context, evt *event.Event) ([]*ev
 		if err != nil || resp.StatusCode != 200 {
 			return nil, nil
 		}
+		committed = true
 		if strings.Contains(strings.ToLower(resp.Body), "failed") {
 			return nil, nil
 		}
@@ -177,11 +196,18 @@ func (m *CrtSh) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Eve
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	url := "https://crt.sh/?q=%25." + evt.Data + "&output=json"
 	resp, err := freeAPIClient.FetchURL(ctx, url)
 	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
 		return nil, nil
 	}
+	committed = true
 	var entries []crtShEntry
 	if err := json.Unmarshal([]byte(resp.Body), &entries); err != nil {
 		return nil, nil
@@ -243,11 +269,18 @@ func (m *CertSpotter) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	url := "https://api.certspotter.com/v1/issuances?domain=" + evt.Data + "&include_subdomains=true&expand=dns_names"
 	resp, err := freeAPIClient.FetchURL(ctx, url)
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var entries []certSpotterIssuance
 	if err := json.Unmarshal([]byte(resp.Body), &entries); err != nil {
 		return nil, nil
@@ -306,10 +339,17 @@ func (m *DNSDumpster) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	resp, err := freeAPIClient.FetchURL(ctx, "https://dnsdumpster.com/")
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	// Extract any hostnames referencing the target domain from the landing HTML.
 	// (Full POST flow with CSRF is brittle and often captcha-guarded.)
 	hostRe := regexp.MustCompile(`\b([a-zA-Z0-9-]+(?:\.[a-zA-Z0-9-]+)*\.` + regexp.QuoteMeta(evt.Data) + `)\b`)
@@ -397,6 +437,12 @@ func (m *CommonCrawl) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	idx, err := m.getIndex(ctx)
 	if err != nil {
 		return nil, nil
@@ -406,6 +452,7 @@ func (m *CommonCrawl) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	emitted := make(map[string]bool)
 	for _, line := range strings.Split(resp.Body, "\n") {
@@ -491,6 +538,12 @@ func (m *ArchiveOrg) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	out, ok := historicMap[evt.Type]
 	if !ok {
 		return nil, nil
@@ -500,6 +553,7 @@ func (m *ArchiveOrg) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var ar archiveResponse
 	if err := json.Unmarshal([]byte(resp.Body), &ar); err != nil || ar.ArchivedSnapshots.Closest.URL == "" {
 		return nil, nil
@@ -563,6 +617,12 @@ func (m *BGPView) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	var results []*event.Event
 	switch evt.Type {
 	case event.IP_ADDRESS, event.IPV6_ADDRESS:
@@ -570,6 +630,7 @@ func (m *BGPView) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 		if err != nil || resp.StatusCode != 200 {
 			return nil, nil
 		}
+		committed = true
 		if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "bgpview", evt); err == nil {
 			results = append(results, e)
 		}
@@ -595,6 +656,7 @@ func (m *BGPView) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 		if err != nil || resp.StatusCode != 200 {
 			return nil, nil
 		}
+		committed = true
 		var payload bgpViewASNResponse
 		if err := json.Unmarshal([]byte(resp.Body), &payload); err == nil && len(payload.Data.OwnerAddress) > 0 {
 			addr := strings.Join(payload.Data.OwnerAddress, ", ")
@@ -647,10 +709,17 @@ func (m *RIPE) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Even
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	resp, err := freeAPIClient.FetchURL(ctx, "https://stat.ripe.net/data/network-info/data.json?resource="+evt.Data)
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "ripe", evt); err == nil {
 		results = append(results, e)
@@ -708,6 +777,12 @@ func (m *Robtex) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
 		return nil, nil
 	}
+	committed := false
+	defer func() {
+		if !committed {
+			m.seen.remove(evt.Data)
+		}
+	}()
 	if net.ParseIP(evt.Data) == nil {
 		return nil, nil
 	}
@@ -715,6 +790,7 @@ func (m *Robtex) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "robtex", evt); err == nil {
 		results = append(results, e)
