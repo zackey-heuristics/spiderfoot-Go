@@ -22,9 +22,10 @@ without replaying the original planning conversation.
 | 9 — Phishing/Reputation | `c2a0d88e` | phishtank, openphish, emergingthreats, threatcrowd, phishstats | 5 modules in `phishing_reputation.go` (shared `hostFeed`/`ipFeed` patterns) |
 | 10 — Social/Username | `c2a0d88e` | social, accounts, github, twitter, flickr, keybase, gravatar, slideshare | 8 modules in `social_modules.go` |
 | — Dedup audit (all batches) | `81294a87` + `cd131938` | — | Unified atomic reserve/release via shared `seenSet.begin` primitive; see "Shared dedup primitive" section below |
-| 11 — Email/Phone Services | (pending) | haveibeenpwned, hunter, clearbit, emailrep | 4 modules in `email_services.go`; first batch requiring API keys — establishes the API key convention documented below |
+| 11 — Email/Phone Services | `327e6b4b` | haveibeenpwned, hunter, clearbit, emailrep | 4 modules in `email_services.go`; first batch requiring API keys — establishes the API key convention documented below |
+| 12 — Major APIs Part 1 | (pending) | shodan, virustotal, abuseipdb, censys, greynoise, ipinfo, securitytrails | 7 modules in `major_apis.go`; exercises 4 distinct auth schemes (query, header, Basic, Bearer); censys uses uid+secret pair |
 
-**Total registered modules: 81** (dns_resolve + stor_db pre-existing, +79 new)
+**Total registered modules: 88** (dns_resolve + stor_db pre-existing, +86 new)
 
 ## API Key Convention (established in Batch 11)
 
