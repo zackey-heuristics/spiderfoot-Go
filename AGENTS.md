@@ -113,15 +113,38 @@ batch list, and environment quirks are tracked in
 `.claude/plans/phase3-module-port-progress.md` — read this file before resuming.
 
 - Each batch: implement modules → `go test -vet=off` → `gofmt -w` → commit
-- Batches 0-7 (58 modules) are complete; next is Batch 8 (Free APIs Part 2: search engines, sublist3r, stackoverflow, searchcode)
+- Batches 0-10 (77 modules) are complete; next is Batch 11 (Email/Phone Services: haveibeenpwned, hunter, clearbit, emailrep), which requires designing the per-module API key config system first
 - Group similar regex extractors into shared files using the `contentExtractor`
   base type to avoid one-file-per-module bloat
+- **Module dedup**: all HTTP/DNS-backed HandleEvents must use the shared
+  `seenSet.begin(ctx, key)` primitive defined in `internal/modules/free_apis.go`.
+  Pattern at HandleEvent entry:
+  ```go
+  if evt == nil || evt.Data == "" { return nil, nil }
+  skip, finish, err := m.seen.begin(ctx, evt.Data)
+  if err != nil { return nil, err }
+  if skip { return nil, nil }
+  committed := false
+  defer func() { finish(committed) }()
+  // ... do work ...
+  // after a definitive upstream response (HTTP 200 / definitive DNS answer):
+  committed = true
+  ```
+  Set `committed = true` only AFTER a definitive upstream response; leave it
+  false on transient errors so the deferred `finish` releases the reservation
+  and a later event can retry. Do NOT use `seen.add`/`seen.contains`/`seen.remove`
+  directly — they no longer exist.
 - This devcontainer cannot run `go vet` or `golangci-lint` (segfault / OOM) —
   use `gofmt -l` and `go test -vet=off` instead
 - Always set `CGO_ENABLED=0 GOTOOLCHAIN=local` for build/test
 - Claude Code may implement directly without Codex delegation when batches are
   routine pattern-matching modules — Codex review is more valuable for batches
   involving new shared infrastructure (API key system, tool wrappers)
+- Codex sandbox has been intermittently broken in this environment
+  (`bwrap: Failed to make / slave: Permission denied`). When `codex:rescue`
+  returns a sandbox failure, fall back to direct implementation in Claude Code
+  and still run `/codex:adversarial-review` afterwards — the review flow works
+  even when implementation delegation does not.
 
 ## Adversarial Review Template (Claude Code → Codex)
 

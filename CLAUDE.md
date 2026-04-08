@@ -86,7 +86,7 @@ go test -run TestName ./internal/event/...
 
 - **Phase 1** (DONE) — Core framework: event bus, module system, scan orchestrator, SQLite storage, REST API skeleton, CLI, CI
 - **Phase 2** (DONE) — Full Web UI: browser-based scan creation/management/results
-- **Phase 3** (IN PROGRESS) — Module porting: 58 / 234 modules ported (Batches 0-7 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`
+- **Phase 3** (IN PROGRESS) — Module porting: 77 / 234 modules ported (Batches 0-10 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`
 - **Phase 4** (TODO) — Correlation engine, advanced features
 
 ### Phase 3 Progress
@@ -98,7 +98,11 @@ go test -run TestName ./internal/event/...
 - **Batch 5**: Public DNS Resolvers — adguard_dns, cleanbrowsing, cloudflaredns, comodo, opendns, quad9, yandexdns (shared `publicDNSResolver` generic)
 - **Batch 6**: DNS/IP Blacklists — spamhaus, sorbs, spamcop, uceprotect, dronebl, surbl (shared `ipDNSBL` generic)
 - **Batch 7**: Free APIs Part 1 — hackertarget, crt, certspotter, dnsdumpster, commoncrawl, archiveorg, bgpview, ripe, robtex
-- **Next**: Batch 8 (Free APIs Part 2 — search engines, sublist3r, stackoverflow, searchcode) — see `.claude/plans/phase3-module-port-progress.md`
+- **Batch 8**: Free APIs Part 2 — googlesearch, bingsearch, duckduckgo, sublist3r, stackoverflow, searchcode (googlesearch/bingsearch require API keys via opts and no-op gracefully without them; full API key wiring deferred to Batch 11+)
+- **Batch 9**: Phishing/Reputation — phishtank, openphish, emergingthreats, threatcrowd, phishstats (shared `hostFeed` and `ipFeed` generics; feed download via `fetchOnce` helper with retry-on-failure semantics)
+- **Batch 10**: Social/Username — social, accounts, github, twitter, flickr, keybase, gravatar, slideshare (`accounts` uses WhatsMyName dataset, capped to first 50 sites per username)
+- **Dedup refactor**: All 27 HTTP-backed and 2 DNS-backed HandleEvents in Batch 1-10 now share a single `seenSet.begin` primitive (defined in `internal/modules/free_apis.go`) with atomic reserve, deferred `finish(committed bool)` callback, skip-on-in-flight semantics (no worker blocking), and a pointer-equality generation guard so stale handlers cannot corrupt a successor scan's state after `clear()`. Sequential events retry automatically after a transient HTTP/DNS failure via the commit/release mechanism. See Codex adversarial review history (rounds 1-10) summarized in the progress doc.
+- **Next**: Batch 11 (Email/Phone Services — haveibeenpwned, hunter, clearbit, emailrep) — requires designing a per-module API key config system first. See `.claude/plans/phase3-module-port-progress.md`.
 
 ### Phase 3 Build Notes (this devcontainer)
 - `go vet` segfaults — always pass `-vet=off` to `go test`

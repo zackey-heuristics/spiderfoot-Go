@@ -18,11 +18,87 @@ without replaying the original planning conversation.
 | 5 — Public DNS Resolvers | `2a909f11` | adguard_dns, cleanbrowsing, cloudflaredns, comodo, opendns, quad9, yandexdns | 7 modules (shared `publicDNSResolver` generic) |
 | 6 — DNS/IP Blacklists | `ed1d6721` | spamhaus, sorbs, spamcop, uceprotect, dronebl, surbl | 6 modules (shared `ipDNSBL` generic; surbl also handles domains) |
 | 7 — Free APIs Part 1 | `248504c9` | hackertarget, crt, certspotter, dnsdumpster, commoncrawl, archiveorg, bgpview, ripe, robtex | 9 modules in one file `free_apis.go` |
-| 8 — Free APIs Part 2 | (pending) | googlesearch, bingsearch, duckduckgo, sublist3r, stackoverflow, searchcode | 6 modules in `search_apis.go` |
-| 9 — Phishing/Reputation | (pending) | phishtank, openphish, emergingthreats, threatcrowd, phishstats | 5 modules in `phishing_reputation.go` (shared `hostFeed`/`ipFeed` patterns) |
-| 10 — Social/Username | (pending) | social, accounts, github, twitter, flickr, keybase, gravatar, slideshare | 8 modules in `social_modules.go` |
+| 8 — Free APIs Part 2 | `c2a0d88e` | googlesearch, bingsearch, duckduckgo, sublist3r, stackoverflow, searchcode | 6 modules in `search_apis.go` |
+| 9 — Phishing/Reputation | `c2a0d88e` | phishtank, openphish, emergingthreats, threatcrowd, phishstats | 5 modules in `phishing_reputation.go` (shared `hostFeed`/`ipFeed` patterns) |
+| 10 — Social/Username | `c2a0d88e` | social, accounts, github, twitter, flickr, keybase, gravatar, slideshare | 8 modules in `social_modules.go` |
+| — Dedup audit (all batches) | `81294a87` + `cd131938` | — | Unified atomic reserve/release via shared `seenSet.begin` primitive; see "Shared dedup primitive" section below |
 
 **Total registered modules: 77** (dns_resolve + stor_db pre-existing, +75 new)
+
+## Shared dedup primitive (MUST READ before adding a new module)
+
+All HTTP-backed and DNS-backed HandleEvents in Batch 1-10 use a single
+shared primitive, `seenSet.begin`, defined in
+`internal/modules/free_apis.go`. This was introduced after a 10-round
+Codex adversarial review iteration addressed: silent false-negatives
+on transient failure, TOCTOU races between contains-then-act, waiter
+semantics vs worker starvation, context cancellation on waiters, and
+generation safety across scan teardown.
+
+Final design: **non-blocking skip-on-in-flight with deferred finish**.
+
+```go
+func (m *MyModule) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
+    if evt == nil || evt.Data == "" {
+        return nil, nil
+    }
+    skip, finish, err := m.seen.begin(ctx, evt.Data)
+    if err != nil {
+        return nil, err
+    }
+    if skip {
+        return nil, nil
+    }
+    committed := false
+    defer func() { finish(committed) }()
+
+    // ... do network work ...
+    resp, err := client.FetchURL(ctx, url)
+    if err != nil || resp.StatusCode != 200 {
+        return nil, nil // defer releases reservation → later event can retry
+    }
+    // Upstream responded definitively — commit the reservation.
+    committed = true
+    // ... parse, emit events ...
+    return results, nil
+}
+```
+
+Key invariants:
+- `committed` MUST be set to `true` only after a definitive upstream
+  response (HTTP 200, definitive DNS NXDOMAIN, etc.). Transient
+  failures (network error, non-200, SERVFAIL) fall through to the
+  deferred `finish(false)` which releases the reservation so a later
+  event can retry.
+- The `ctx` parameter is accepted by `begin` for API symmetry but is
+  not read by the current implementation — the primitive is
+  deliberately non-blocking (skip-on-in-flight) to avoid stalling
+  scan workers behind slow upstream I/O.
+- `finish` applies a pointer-equality generation guard: if
+  `clear()` wiped the map or a later scan reserved the same key, the
+  stale handler's mutation is skipped so a successor scan's state is
+  never corrupted.
+- DNS modules (`ipDNSBL`, `publicDNSResolver`) also use `seenSet`
+  directly — do NOT reintroduce per-struct raw maps with local
+  `markSeen`/`releaseSeen` helpers.
+- Pure-regex modules (e.g. `Social`, `content_extractors.go`) can
+  call `finish(true)` unconditionally at the end of HandleEvent since
+  there is no network failure to distinguish.
+
+Regression tests for this primitive live in
+`internal/modules/phishing_reputation_test.go`:
+- `TestSeenSetSkipOnInFlight` — non-blocking dedup
+- `TestSeenSetFinishAfterClearIsSafe` — generation guard
+- `TestHostFeedConcurrentDedup` — 10 concurrent callers → 1 emission
+- `TestHostFeedRetryAfterTransientFailure` — sequential retry after transient
+- `TestFetchOnceRetriesOnFailure` / `TestFetchOnceCachesSuccess` — fetchOnce helper
+
+Known tradeoff (explicitly accepted after rounds 6-8):
+A concurrent duplicate arriving while an owner is mid-fetch does NOT
+re-run the fetch if the owner then fails transiently. Sequential
+retry via a later event remains correct. This tradeoff favors scan
+liveness over enrichment completeness in the rare concurrent-duplicate
+case.
 
 Batch 10 notes:
 - `social` is regex-only on `LINKED_URL_EXTERNAL`; emits `SOCIAL_MEDIA` (`"<service>: <url>"`) plus `USERNAME`. 9 platforms covered (LinkedIn, GitHub, Bitbucket, GitLab, Facebook, YouTube, Twitter, SlideShare, Instagram).
