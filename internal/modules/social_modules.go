@@ -78,16 +78,19 @@ func (m *Social) ProducedEvents() []event.Type {
 }
 
 // HandleEvent matches each social-media regex and emits hits.
-func (m *Social) HandleEvent(_ context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+func (m *Social) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	var results []*event.Event
 	for _, p := range socialPatterns {
 		match := p.re.FindStringSubmatch(evt.Data)
@@ -176,15 +179,18 @@ const accountsMaxSites = 50
 
 // HandleEvent probes up to accountsMaxSites sites for the given username.
 func (m *Accounts) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	ds, err := m.loadDataset(ctx)
 	if err != nil || ds == nil {
 		return nil, nil
@@ -296,15 +302,18 @@ func extractGithubUsername(data string) string {
 
 // HandleEvent fetches the GitHub user profile and repo list.
 func (m *GitHub) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	username := evt.Data
 	if evt.Type == event.SOCIAL_MEDIA {
 		if !strings.HasPrefix(evt.Data, "GitHub:") {
@@ -386,15 +395,18 @@ func (m *Twitter) ProducedEvents() []event.Type {
 
 // HandleEvent fetches a Twitter profile and parses fullname/location.
 func (m *Twitter) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	if !strings.HasPrefix(evt.Data, "Twitter:") {
 		return nil, nil
 	}
@@ -451,15 +463,18 @@ func (m *Flickr) ProducedEvents() []event.Type {
 
 // HandleEvent runs a single-page Flickr photo search and harvests emails/URLs.
 func (m *Flickr) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	homeResp, err := socialClient.FetchURL(ctx, "https://www.flickr.com/")
 	if err != nil || homeResp.StatusCode != 200 {
 		return nil, nil
@@ -568,15 +583,18 @@ type keybaseResponse struct {
 
 // HandleEvent looks up the user/domain on keybase.io.
 func (m *Keybase) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	var url string
 	if evt.Type == event.USERNAME {
 		url = "https://keybase.io/_/api/1.0/user/lookup.json?usernames=" + evt.Data
@@ -683,15 +701,18 @@ type gravatarResponse struct {
 
 // HandleEvent fetches the Gravatar JSON profile for the email.
 func (m *Gravatar) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	sum := md5.Sum([]byte(strings.ToLower(strings.TrimSpace(evt.Data))))
 	hash := hex.EncodeToString(sum[:])
 	resp, err := socialClient.FetchURL(ctx, "https://secure.gravatar.com/"+hash+".json")
@@ -778,15 +799,18 @@ func (m *SlideShare) ProducedEvents() []event.Type {
 
 // HandleEvent fetches a SlideShare profile and parses meta tags.
 func (m *SlideShare) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	if !strings.HasPrefix(evt.Data, "SlideShare:") {
 		return nil, nil
 	}

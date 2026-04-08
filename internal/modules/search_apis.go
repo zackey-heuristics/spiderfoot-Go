@@ -117,15 +117,18 @@ type gcsResponse struct {
 
 // HandleEvent runs a site:<domain> query against Google CSE.
 func (m *GoogleSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	if m.apiKey == "" || m.cseID == "" {
 		return nil, nil
 	}
@@ -205,15 +208,18 @@ type bingResponse struct {
 
 // HandleEvent runs a site:<domain> query against Bing.
 func (m *BingSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	if m.apiKey == "" {
 		return nil, nil
 	}
@@ -300,15 +306,18 @@ type ddgResponse struct {
 
 // HandleEvent fetches an Instant Answer for the event domain.
 func (m *DuckDuckGo) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	u := "https://api.duckduckgo.com/?q=" + url.QueryEscape(evt.Data) + "&format=json&pretty=1"
 	resp, err := searchAPIClient.FetchURL(ctx, u)
 	if err != nil || resp.StatusCode != 200 {
@@ -369,15 +378,18 @@ func (m *Sublist3r) ProducedEvents() []event.Type {
 
 // HandleEvent fetches the subdomain list and emits matches.
 func (m *Sublist3r) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	target := strings.ToLower(evt.Data)
 	u := "https://api.sublist3r.com/search.php?domain=" + url.QueryEscape(evt.Data)
 	resp, err := searchAPIClient.FetchURL(ctx, u)
@@ -447,15 +459,18 @@ type stackResponse struct {
 
 // HandleEvent runs a /search/excerpts query and harvests emails.
 func (m *StackOverflow) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	u := "https://api.stackexchange.com/2.3/search/excerpts?order=desc&q=" + url.QueryEscape(evt.Data) + "&site=stackoverflow"
 	resp, err := searchAPIClient.FetchURL(ctx, u)
 	if err != nil || resp.StatusCode != 200 {
@@ -533,15 +548,18 @@ type searchcodeResponse struct {
 
 // HandleEvent fetches first page of search results and harvests data.
 func (m *SearchCode) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	target := strings.ToLower(evt.Data)
 	u := "https://searchcode.com/api/codesearch_I/?q=" + url.QueryEscape(evt.Data) + "&p=0&per_page=20"
 	resp, err := searchAPIClient.FetchURL(ctx, u)

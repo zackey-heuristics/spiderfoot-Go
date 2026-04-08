@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/event"
@@ -45,8 +44,7 @@ type ipDNSBL struct {
 	zones        []string // one or more DNSBL zone suffixes to query
 	checkDomains bool     // if true, also watch INTERNET_NAME and query domain directly
 
-	seen map[string]bool
-	mu   sync.Mutex
+	seen seenSet
 }
 
 // Meta returns module metadata.
@@ -58,9 +56,9 @@ func (m *ipDNSBL) Meta() module.Meta {
 	}
 }
 
-// Setup initializes the dedup map.
+// Setup initializes the dedup state.
 func (m *ipDNSBL) Setup(_ map[string]any) error {
-	m.seen = make(map[string]bool)
+	m.seen.clear()
 	return nil
 }
 
@@ -150,18 +148,19 @@ func (m *ipDNSBL) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 		return nil, nil
 	}
 
-	// Atomically reserve the indicator. If another goroutine is
-	// already handling it (or it has been definitively processed),
-	// skip without doing duplicate DNS work.
-	if m.markSeen(evt.Data) {
+	// Atomically reserve the indicator via seenSet.begin. Concurrent
+	// callers for the same indicator either wait on the in-flight
+	// owner (and retry if that owner fails transiently) or skip when
+	// a committed result already exists.
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.releaseSeen(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 
 	listed := false
 	anyDefinitive := false
@@ -208,37 +207,8 @@ func (m *ipDNSBL) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 
 // Finish releases resources held by the module.
 func (m *ipDNSBL) Finish() error {
-	m.mu.Lock()
-	m.seen = nil
-	m.mu.Unlock()
+	m.seen.clear()
 	return nil
-}
-
-// releaseSeen deletes key from the dedup set so a later event for the
-// same indicator can retry. Used to undo a markSeen reservation when
-// every zone returned a transient DNS error.
-func (m *ipDNSBL) releaseSeen(key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.seen != nil {
-		delete(m.seen, key)
-	}
-}
-
-// markSeen atomically records and checks key. Returns true if the key
-// was already present (caller should skip), false if it was newly
-// reserved (caller must call releaseSeen on transient failure).
-func (m *ipDNSBL) markSeen(key string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.seen == nil {
-		m.seen = make(map[string]bool)
-	}
-	if m.seen[key] {
-		return true
-	}
-	m.seen[key] = true
-	return false
 }
 
 // reverseIPv4 returns the dot-reversed form of an IPv4 address, or "" if

@@ -13,7 +13,6 @@ import (
 	"context"
 	"fmt"
 	"net"
-	"sync"
 	"time"
 
 	"github.com/zackey-heuristics/spiderfoot-Go/internal/event"
@@ -30,8 +29,7 @@ type publicDNSResolver struct {
 	resultURL   string   // optional URL template with %s for host
 
 	resolver *net.Resolver
-	seen     map[string]bool
-	mu       sync.Mutex
+	seen     seenSet
 }
 
 // Meta returns module metadata.
@@ -43,9 +41,9 @@ func (m *publicDNSResolver) Meta() module.Meta {
 	}
 }
 
-// Setup initializes the custom resolver and dedup map.
+// Setup initializes the custom resolver and dedup state.
 func (m *publicDNSResolver) Setup(_ map[string]any) error {
-	m.seen = make(map[string]bool)
+	m.seen.clear()
 	nsList := append([]string(nil), m.nameservers...)
 	m.resolver = &net.Resolver{
 		PreferGo: true,
@@ -113,18 +111,18 @@ func (m *publicDNSResolver) HandleEvent(ctx context.Context, evt *event.Event) (
 		return nil, nil
 	}
 
-	// Atomically reserve the indicator. If another goroutine is
-	// already handling it (or it has been definitively processed),
-	// skip without doing duplicate DNS work.
-	if m.markSeen(evt.Data) {
+	// Atomically reserve the indicator via seenSet.begin. Concurrent
+	// callers for the same indicator wait on the in-flight owner
+	// and retry if the owner fails transiently.
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.releaseSeen(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 
 	// Must resolve via default resolver to be considered a real host.
 	defCtx, defCancel := context.WithTimeout(ctx, 5*time.Second)
@@ -174,36 +172,8 @@ func (m *publicDNSResolver) HandleEvent(ctx context.Context, evt *event.Event) (
 
 // Finish releases resources held by the module.
 func (m *publicDNSResolver) Finish() error {
-	m.mu.Lock()
-	m.seen = nil
-	m.mu.Unlock()
+	m.seen.clear()
 	return nil
-}
-
-// releaseSeen deletes key from the dedup set so a later event can retry
-// after a transient resolver failure.
-func (m *publicDNSResolver) releaseSeen(key string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.seen != nil {
-		delete(m.seen, key)
-	}
-}
-
-// markSeen atomically records and checks key. Returns true if the key
-// was already present (caller should skip), false if it was newly
-// reserved (caller must call releaseSeen on transient failure).
-func (m *publicDNSResolver) markSeen(key string) bool {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if m.seen == nil {
-		m.seen = make(map[string]bool)
-	}
-	if m.seen[key] {
-		return true
-	}
-	m.seen[key] = true
-	return false
 }
 
 func init() {

@@ -32,47 +32,85 @@ var freeAPIClient = sflib.NewHTTPClient(sflib.HTTPClientOpts{
 	RateLimit: 2,
 })
 
-// seenSet is a simple reusable concurrent dedup set.
+// seenSet implements singleflight-style dedup with retry on transient
+// failure. At any time each key is in one of three states:
+//
+//   - absent   — no attempt has started
+//   - in-flight — an attempt is running; concurrent callers wait on
+//     the entry's `done` channel and re-evaluate when it closes
+//   - committed — a definitive result was produced; all callers skip
+//
+// Transient failures delete the entry so concurrent waiters (and later
+// events) can retry. Only committed entries remain permanently.
 type seenSet struct {
 	mu sync.Mutex
-	m  map[string]bool
+	m  map[string]*seenEntry
 }
 
-// add returns true if the key was already present.
-func (s *seenSet) add(key string) bool {
+// seenEntry tracks the state of a single key. done is closed when the
+// in-flight attempt finishes; committed distinguishes a definitive
+// success from a transient failure.
+type seenEntry struct {
+	done      chan struct{}
+	committed bool
+}
+
+// begin atomically starts an attempt for key and returns a finish
+// callback the caller must defer.
+//
+//   - If key is already committed or another attempt is currently in
+//     flight, begin returns (skip=true, nil, nil). The caller must
+//     treat this as "another goroutine is (or was) handling it" and
+//     return nil.
+//   - Otherwise, begin reserves the key and returns (false, finish,
+//     nil). finish(committed) MUST be called exactly once via defer.
+//     committed=true marks the result definitive so later events
+//     also skip; committed=false releases the reservation so a
+//     later event can retry after a transient failure.
+//
+// The ctx parameter is accepted for API symmetry and future
+// enhancement but is not read by the current implementation — this
+// is deliberately a non-blocking, skip-on-in-flight primitive so
+// that duplicate deliveries never stall scan worker goroutines
+// behind a slow upstream. The tradeoff is that a duplicate event
+// arriving while an owner is mid-fetch will NOT re-run the fetch if
+// the owner subsequently fails transiently; retry in that case
+// relies on a later sequential event re-entering HandleEvent after
+// the owner's deferred release.
+func (s *seenSet) begin(_ context.Context, key string) (skip bool, finish func(committed bool), err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.m == nil {
-		s.m = make(map[string]bool)
+		s.m = make(map[string]*seenEntry)
 	}
-	if s.m[key] {
-		return true
+	if _, ok := s.m[key]; ok {
+		return true, nil, nil
 	}
-	s.m[key] = true
-	return false
+	e := &seenEntry{done: make(chan struct{})}
+	s.m[key] = e
+	return false, func(committed bool) {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		// Pointer-equality generation guard: if clear() (via Finish)
+		// wiped the map, or a later scan reserved the same key with
+		// a new entry, our captured *seenEntry is no longer the
+		// current reservation. Do not mutate the successor scan's
+		// state. close(done) is still safe because done is owned by
+		// this reservation instance.
+		if s.m == nil || s.m[key] != e {
+			close(e.done)
+			return
+		}
+		if committed {
+			e.committed = true
+		} else {
+			delete(s.m, key)
+		}
+		close(e.done)
+	}, nil
 }
 
-// contains reports whether key has been recorded, without marking it.
-// Prefer using add + remove for reserve/release semantics instead of
-// check-then-act on contains, which is racy under concurrent delivery.
-func (s *seenSet) contains(key string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.m[key]
-}
-
-// remove deletes key from the set. Used to release a reservation made
-// by add when a transient failure occurs and the caller wants later
-// events for the same indicator to retry.
-func (s *seenSet) remove(key string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.m != nil {
-		delete(s.m, key)
-	}
-}
-
-// clear empties the set.
+// clear empties the set. Used by Finish() to reset between scans.
 func (s *seenSet) clear() {
 	s.mu.Lock()
 	s.m = nil
@@ -107,15 +145,18 @@ func (m *HackerTarget) ProducedEvents() []event.Type {
 
 // HandleEvent dispatches on event type.
 func (m *HackerTarget) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	var results []*event.Event
 	switch evt.Type {
 	case event.IP_ADDRESS:
@@ -193,15 +234,18 @@ type crtShEntry struct {
 
 // HandleEvent queries crt.sh and emits discovered hostnames.
 func (m *CrtSh) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	url := "https://crt.sh/?q=%25." + evt.Data + "&output=json"
 	resp, err := freeAPIClient.FetchURL(ctx, url)
 	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
@@ -266,15 +310,18 @@ type certSpotterIssuance struct {
 
 // HandleEvent queries CertSpotter and emits discovered hostnames.
 func (m *CertSpotter) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	url := "https://api.certspotter.com/v1/issuances?domain=" + evt.Data + "&include_subdomains=true&expand=dns_names"
 	resp, err := freeAPIClient.FetchURL(ctx, url)
 	if err != nil || resp.StatusCode != 200 {
@@ -336,15 +383,18 @@ func (m *DNSDumpster) ProducedEvents() []event.Type { return []event.Type{event.
 // HandleEvent queries dnsdumpster and emits discovered hostnames.
 // Note: best-effort; dnsdumpster may respond with a captcha page.
 func (m *DNSDumpster) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	resp, err := freeAPIClient.FetchURL(ctx, "https://dnsdumpster.com/")
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
@@ -434,15 +484,18 @@ type ccEntry struct {
 
 // HandleEvent queries the CommonCrawl index and emits found URLs.
 func (m *CommonCrawl) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	idx, err := m.getIndex(ctx)
 	if err != nil {
 		return nil, nil
@@ -535,15 +588,18 @@ type archiveResponse struct {
 
 // HandleEvent checks Wayback availability and emits *_HISTORIC events.
 func (m *ArchiveOrg) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	out, ok := historicMap[evt.Type]
 	if !ok {
 		return nil, nil
@@ -614,15 +670,18 @@ type bgpViewASNResponse struct {
 
 // HandleEvent dispatches on event type.
 func (m *BGPView) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	var results []*event.Event
 	switch evt.Type {
 	case event.IP_ADDRESS, event.IPV6_ADDRESS:
@@ -706,15 +765,18 @@ type ripeNetworkInfoResponse struct {
 
 // HandleEvent queries RIPE and emits discovered data.
 func (m *RIPE) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	resp, err := freeAPIClient.FetchURL(ctx, "https://stat.ripe.net/data/network-info/data.json?resource="+evt.Data)
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
@@ -774,15 +836,18 @@ func (m *Robtex) ProducedEvents() []event.Type {
 // `pas` field containing passive hostname records. Each record has an `o`
 // (hostname) field.
 func (m *Robtex) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	if net.ParseIP(evt.Data) == nil {
 		return nil, nil
 	}

@@ -137,15 +137,18 @@ func (m *hostFeed) ProducedEvents() []event.Type {
 
 // HandleEvent fetches the feed (cached) and checks membership.
 func (m *hostFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	hits, ok := hostHitTypes[evt.Type]
 	if !ok {
 		return nil, nil
@@ -259,15 +262,18 @@ func parseIPList(body string) map[string]bool {
 // HandleEvent fetches the IP list and checks for IP membership.
 // Netblock CIDR expansion is not performed.
 func (m *ipFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	hits, ok := ipHitTypes[evt.Type]
 	if !ok {
 		return nil, nil
@@ -355,15 +361,18 @@ var tcOutputType = map[event.Type]event.Type{
 // HandleEvent picks the right ThreatCrowd endpoint and emits a malicious
 // event when the API reports negative votes.
 func (m *ThreatCrowd) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	out, ok := tcOutputType[evt.Type]
 	if !ok {
 		return nil, nil
@@ -433,15 +442,18 @@ func (m *PhishStats) ProducedEvents() []event.Type {
 
 // HandleEvent queries the phishing endpoint for the event IP.
 func (m *PhishStats) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Event, error) {
-	if evt == nil || evt.Data == "" || m.seen.add(evt.Data) {
+	if evt == nil || evt.Data == "" {
+		return nil, nil
+	}
+	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	if err != nil {
+		return nil, err
+	}
+	if skip {
 		return nil, nil
 	}
 	committed := false
-	defer func() {
-		if !committed {
-			m.seen.remove(evt.Data)
-		}
-	}()
+	defer func() { finish(committed) }()
 	hits, ok := ipHitTypes[evt.Type]
 	if !ok {
 		return nil, nil

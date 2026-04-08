@@ -188,6 +188,71 @@ func TestHostFeedConcurrentDedup(t *testing.T) {
 	}
 }
 
+// TestSeenSetBeginCancellation verifies that a waiter blocked on an
+// in-flight owner unblocks when its context is cancelled, instead of
+// hanging until the owner returns.
+// TestSeenSetFinishAfterClearIsSafe verifies the generation guard:
+// an in-flight handler whose finish closure runs AFTER clear() (and
+// a new reservation for the same key) must not corrupt the new
+// scan's dedup state.
+func TestSeenSetFinishAfterClearIsSafe(t *testing.T) {
+	var s seenSet
+	// Scan 1: reserve the key.
+	_, finishOld, err := s.begin(context.Background(), "k")
+	if err != nil || finishOld == nil {
+		t.Fatalf("scan1 begin: %v", err)
+	}
+	// Scan 1 is cancelled — Finish() clears dedup state.
+	s.clear()
+	// Scan 2 starts and reserves the same key.
+	skip, finishNew, err := s.begin(context.Background(), "k")
+	if err != nil {
+		t.Fatalf("scan2 begin: %v", err)
+	}
+	if skip || finishNew == nil {
+		t.Fatalf("scan2 begin: skip=%v finish=%v", skip, finishNew)
+	}
+	// Scan 1's in-flight handler finally returns with a transient
+	// failure. This must NOT delete scan 2's reservation.
+	finishOld(false)
+	// Third caller in scan 2 should still see in-flight and skip.
+	skip3, _, _ := s.begin(context.Background(), "k")
+	if !skip3 {
+		t.Errorf("scan 1 finish corrupted scan 2 state: third begin returned skip=false")
+	}
+	finishNew(false)
+}
+
+// TestSeenSetSkipOnInFlight verifies non-blocking skip-on-in-flight
+// semantics: while one goroutine holds a reservation, concurrent
+// begin() calls for the same key return immediately with skip=true
+// instead of blocking. This prevents worker-pool starvation behind
+// slow upstreams.
+func TestSeenSetSkipOnInFlight(t *testing.T) {
+	var s seenSet
+	_, finish, err := s.begin(context.Background(), "k")
+	if err != nil || finish == nil {
+		t.Fatalf("owner begin: finish=%v err=%v", finish, err)
+	}
+	defer finish(false)
+
+	// A second caller must not block.
+	done := make(chan struct{})
+	var skip2 bool
+	go func() {
+		skip2, _, _ = s.begin(context.Background(), "k")
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(100 * time.Millisecond):
+		t.Fatal("second begin blocked while owner held the reservation")
+	}
+	if !skip2 {
+		t.Errorf("second begin: skip=%v, want true", skip2)
+	}
+}
+
 // TestHostFeedRetryAfterTransientFailure ensures that a transient feed
 // load failure on the first event does NOT permanently suppress the
 // module for later events with the same indicator.
