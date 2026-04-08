@@ -85,6 +85,40 @@ func sfURL(label, link string) string {
 	return label + "\n<SFURL>" + link + "</SFURL>"
 }
 
+// majorAPIFetchPOST performs an HTTP POST and returns the body on
+// 200, or (nil, false) otherwise. Content-Type defaults to
+// application/json unless setHeaders overrides it.
+func majorAPIFetchPOST(ctx context.Context, rawURL string, setHeaders func(h http.Header), body []byte) ([]byte, bool) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(string(body)))
+	if err != nil {
+		return nil, false
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "spiderfoot-go")
+	if setHeaders != nil {
+		setHeaders(req.Header)
+	}
+	resp, err := majorAPIHTTPClient.Do(req)
+	if err != nil {
+		return nil, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, false
+	}
+	b, err := io.ReadAll(io.LimitReader(resp.Body, majorAPIMaxBody))
+	if err != nil {
+		return nil, false
+	}
+	return b, true
+}
+
+// basicAuthHeader returns the "Basic <base64(user:pass)>" value.
+func basicAuthHeader(user, pass string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(user+":"+pass))
+}
+
 // ============================================================================
 // Shodan
 // ============================================================================
@@ -644,9 +678,8 @@ func (m *Censys) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	}
 
 	u := "https://search.censys.io/api/v2/hosts/" + url.PathEscape(evt.Data)
-	auth := base64.StdEncoding.EncodeToString([]byte(m.uid + ":" + m.secret))
 	body, ok := majorAPIFetch(ctx, u, func(h http.Header) {
-		h.Set("Authorization", "Basic "+auth)
+		h.Set("Authorization", basicAuthHeader(m.uid, m.secret))
 	})
 	if !ok || len(body) == 0 {
 		return nil, nil
