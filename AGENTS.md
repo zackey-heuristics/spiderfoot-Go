@@ -113,7 +113,7 @@ batch list, and environment quirks are tracked in
 `.claude/plans/phase3-module-port-progress.md` — read this file before resuming.
 
 - Each batch: implement modules → `go test -vet=off` → `gofmt -w` → commit
-- Batches 0-10 (77 modules) are complete; next is Batch 11 (Email/Phone Services: haveibeenpwned, hunter, clearbit, emailrep), which requires designing the per-module API key config system first
+- Batches 0-13 (95 modules) are complete; next is Batch 14 (Security/Threat Intel: googlesafebrowsing, metadefender, hybrid_analysis, openbugbounty). The per-module API key convention is established — see "API Key Convention" in `.claude/plans/phase3-module-port-progress.md`
 - Group similar regex extractors into shared files using the `contentExtractor`
   base type to avoid one-file-per-module bloat
 - **Module dedup**: all HTTP/DNS-backed HandleEvents must use the shared
@@ -121,11 +121,17 @@ batch list, and environment quirks are tracked in
   Pattern at HandleEvent entry:
   ```go
   if evt == nil || evt.Data == "" { return nil, nil }
-  skip, finish, err := m.seen.begin(ctx, evt.Data)
+  // Dedup key must include evt.Type so modules that watch multiple
+  // type namespaces (IP_ADDRESS vs AFFILIATE_IPADDR, DOMAIN_NAME vs
+  // INTERNET_NAME) don't drop one context after seeing the other.
+  skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
   if err != nil { return nil, err }
   if skip { return nil, nil }
   committed := false
   defer func() { finish(committed) }()
+  // IMPORTANT: set committed=true only AFTER json.Unmarshal success,
+  // so a 200 with garbage body (rate-limit HTML, truncated JSON) does
+  // not permanently suppress retries for this key.
   // ... do work ...
   // after a definitive upstream response (HTTP 200 / definitive DNS answer):
   committed = true

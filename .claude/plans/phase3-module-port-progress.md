@@ -4,6 +4,22 @@ This file tracks progress on porting all 234 Python SpiderFoot modules to Go.
 It is intended as a handoff document so a fresh Claude Code session can resume
 without replaying the original planning conversation.
 
+## Session handoff (last updated 2026-04-09)
+
+**Branch**: `feature/1-go-rewrite` — all work pushed to origin.
+**Last commit**: `d380caf6` (Codex adversarial review fixes for Batches 7-13).
+**Registered modules**: 95 / 234.
+**Next batch**: **Batch 14 — Security/Threat Intel** (googlesafebrowsing, metadefender, hybrid_analysis, openbugbounty). Follow the plan-implement-test-review-commit cycle established in Batches 11-13.
+
+**To resume in a fresh session**, paste this prompt:
+
+> SpiderFoot-Go の Phase 3 Module Port を続けます。現在 95/234 モジュール完了、branch は `feature/1-go-rewrite`、最終コミットは `d380caf6`。`.claude/plans/phase3-module-port-progress.md` と `CLAUDE.md` を読んで現状を把握してから、Batch 14 (Security/Threat Intel: googlesafebrowsing, metadefender, hybrid_analysis, openbugbounty) に進んでください。Batches 11-13 で確立した規約 (vendor-prefixed opt keys、no generic `api_key` fallback、`seen.begin` に `evt.Type+":"+evt.Data` を渡す、JSON parse 成功後に `committed=true`、`url.PathEscape`/`url.QueryEscape`) を踏襲してください。
+
+**Known pre-existing untracked files** (DO NOT commit as part of any batch):
+- `.devcontainer/` — separate concern, has security issues flagged by Codex, needs its own PR
+- `core`, `internal/db/core` — crash dump artifacts, should be gitignored in a separate cleanup commit
+- `internal/modules/dnsbl_test.go` has a pre-existing `gofmt` violation — fix in a separate cleanup commit
+
 ## Current Status
 
 **Completed batches** (commits on `feature/1-go-rewrite`):
@@ -24,7 +40,8 @@ without replaying the original planning conversation.
 | — Dedup audit (all batches) | `81294a87` + `cd131938` | — | Unified atomic reserve/release via shared `seenSet.begin` primitive; see "Shared dedup primitive" section below |
 | 11 — Email/Phone Services | `327e6b4b` | haveibeenpwned, hunter, clearbit, emailrep | 4 modules in `email_services.go`; first batch requiring API keys — establishes the API key convention documented below |
 | 12 — Major APIs Part 1 | `ac620c8f` | shodan, virustotal, abuseipdb, censys, greynoise, ipinfo, securitytrails | 7 modules in `major_apis.go`; exercises 4 distinct auth schemes (query, header, Basic, Bearer); censys uses uid+secret pair |
-| 13 — Major APIs Part 2 | (pending) | riskiq, intelx, dehashed, leakix, threatfox, urlscan, xforce | 7 modules in `major_apis2.go`; introduces `majorAPIFetchPOST`/`basicAuthHeader` shared helpers. threatfox+urlscan are free (no API key), rest use vendor-prefixed keys; multi-credential modules (riskiq/dehashed/xforce) use two opt keys each |
+| 13 — Major APIs Part 2 | `8dfc9a9a` | riskiq, intelx, dehashed, leakix, threatfox, urlscan, xforce | 7 modules in `major_apis2.go`; introduces `majorAPIFetchPOST`/`basicAuthHeader` shared helpers. threatfox+urlscan are free (no API key), rest use vendor-prefixed keys; multi-credential modules (riskiq/dehashed/xforce) use two opt keys each |
+| — Dedup key + commit ordering fix | `d380caf6` | — | Codex adversarial review of Batch 13 flagged two high-severity issues applying across Batches 7-13. (1) `seenSet.begin` key composed as `string(evt.Type)+":"+evt.Data` so IP_ADDRESS vs AFFILIATE_IPADDR (and DOMAIN_NAME vs INTERNET_NAME) no longer collide and drop findings. (2) `committed = true` moved to after `json.Unmarshal` success, so an HTTP 200 with garbage JSON no longer permanently suppresses retries. HIBP retains 404-definitive semantics. Text-based parsers (AbuseIPDB/hostFeed/ipFeed) unchanged. |
 
 **Total registered modules: 95** (dns_resolve + stor_db pre-existing, +93 new)
 

@@ -86,7 +86,7 @@ go test -run TestName ./internal/event/...
 
 - **Phase 1** (DONE) — Core framework: event bus, module system, scan orchestrator, SQLite storage, REST API skeleton, CLI, CI
 - **Phase 2** (DONE) — Full Web UI: browser-based scan creation/management/results
-- **Phase 3** (IN PROGRESS) — Module porting: 95 / 234 modules ported (Batches 0-13 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`
+- **Phase 3** (IN PROGRESS) — Module porting: 95 / 234 modules ported (Batches 0-13 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`. **Next**: Batch 14 (Security/Threat Intel). See the "Session handoff" block at the top of that file for a resume prompt.
 - **Phase 4** (TODO) — Correlation engine, advanced features
 
 ### Phase 3 Progress
