@@ -22,8 +22,58 @@ without replaying the original planning conversation.
 | 9 — Phishing/Reputation | `c2a0d88e` | phishtank, openphish, emergingthreats, threatcrowd, phishstats | 5 modules in `phishing_reputation.go` (shared `hostFeed`/`ipFeed` patterns) |
 | 10 — Social/Username | `c2a0d88e` | social, accounts, github, twitter, flickr, keybase, gravatar, slideshare | 8 modules in `social_modules.go` |
 | — Dedup audit (all batches) | `81294a87` + `cd131938` | — | Unified atomic reserve/release via shared `seenSet.begin` primitive; see "Shared dedup primitive" section below |
+| 11 — Email/Phone Services | (pending) | haveibeenpwned, hunter, clearbit, emailrep | 4 modules in `email_services.go`; first batch requiring API keys — establishes the API key convention documented below |
 
-**Total registered modules: 77** (dns_resolve + stor_db pre-existing, +75 new)
+**Total registered modules: 81** (dns_resolve + stor_db pre-existing, +79 new)
+
+## API Key Convention (established in Batch 11)
+
+Modules that require third-party API keys follow this convention:
+
+1. **Opts key name**: Python-compatible per-module prefix to avoid
+   collisions with the `default:` YAML section that `ModuleOpts` merges.
+   Examples: `hibp_api_key`, `hunter_api_key`, `clearbit_api_key`,
+   `emailrep_api_key`. For modules with multiple credentials, use the
+   same convention (`google_api_key` + `google_cse_id`).
+
+2. **Env var injection**: `SF_MODULE_<MODNAME>_<KEY>=<value>` is read
+   by `config.applyModuleEnvOverrides` (in `internal/config/config.go`)
+   and written to `cfg.Modules[mod][key]`. Module/key split is on the
+   first underscore after the `SF_MODULE_` prefix, so module names
+   must be single-word (all current SpiderFoot-Go names satisfy this).
+
+   **Modules read ONLY the vendor-prefixed key name** (e.g.
+   `hibp_api_key`), never a generic `api_key`. This is a hard
+   security boundary: a `default: api_key: xxx` YAML stanza would
+   otherwise leak that key to every module that consumes `api_key`,
+   silently shipping it to unrelated upstream vendors. Codex
+   adversarial review (2026-04-08) flagged a fallback-on-`api_key`
+   implementation as a credential leakage regression and it was
+   reverted. Regression test:
+   `TestEmailServicesRejectGenericAPIKey` in
+   `internal/modules/email_services_test.go`.
+
+   Consequence: env-var users must use the doubled form to set a
+   per-module key, e.g. `SF_MODULE_HIBP_HIBP_API_KEY=xxx`. The first
+   `HIBP` segment selects the module bucket; the second `HIBP_API_KEY`
+   is the literal opt key the module reads. Awkward but explicit and
+   safe. A future enhancement could add a config-side translation
+   layer that maps `SF_MODULE_HIBP_API_KEY` → `hibp_api_key` only when
+   it does not collide with an existing vendor-namespaced key, but
+   that work is deferred until the trust-boundary semantics are
+   formalized.
+
+3. **`module.Meta.RequiresAPIKey bool`**: new field on the Meta struct
+   (`internal/module/meta.go`). Modules set this to `true` when they
+   no-op without a key. Zero-value is `false`, preserving existing 77
+   modules untouched. Future web UI work can surface a "missing key"
+   indicator based on this flag.
+
+4. **Runtime behavior**: `Setup` reads the key via `optString(opts,
+   "<mod>_api_key", "")` and stores it. `HandleEvent` begins with
+   `seenSet.begin` (so dedup still applies), then returns `nil, nil`
+   if the key is empty. Key-missing events do NOT commit the seenSet
+   reservation, so a later scan with the key populated will retry.
 
 ## Shared dedup primitive (MUST READ before adding a new module)
 

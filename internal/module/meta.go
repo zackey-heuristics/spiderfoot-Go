@@ -12,4 +12,8 @@ type Meta struct {
 	UseCases []string
 	// Flags records optional module capabilities or behaviors.
 	Flags []string
+	// RequiresAPIKey signals that the module will no-op unless a per-module
+	// API key is supplied via config (modules.<name>.<key>_api_key) or
+	// environment variable (SF_MODULE_<NAME>_<KEY>).
+	RequiresAPIKey bool
 }

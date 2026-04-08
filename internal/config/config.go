@@ -137,7 +137,43 @@ func applyEnvOverrides(cfg *Config) error {
 		cfg.APIKey = v
 	}
 
+	applyModuleEnvOverrides(cfg)
+
 	return errors.Join(errs...)
+}
+
+// applyModuleEnvOverrides scans os.Environ() for variables of the form
+// SF_MODULE_<MOD>_<KEY>=<value> and injects them into cfg.Modules[mod][key].
+// The module name and key are lowercased. The module/key split is on the
+// first underscore after the SF_MODULE_ prefix, so module names must not
+// contain underscores (all registered SpiderFoot-Go module names are
+// single-word). Values override any prior YAML setting for the same key.
+func applyModuleEnvOverrides(cfg *Config) {
+	const prefix = "SF_MODULE_"
+	for _, kv := range os.Environ() {
+		if !strings.HasPrefix(kv, prefix) {
+			continue
+		}
+		eq := strings.IndexByte(kv, '=')
+		if eq < 0 {
+			continue
+		}
+		rest := kv[len(prefix):eq]
+		val := kv[eq+1:]
+		us := strings.IndexByte(rest, '_')
+		if us <= 0 || us == len(rest)-1 {
+			continue
+		}
+		mod := strings.ToLower(rest[:us])
+		key := strings.ToLower(rest[us+1:])
+		if cfg.Modules == nil {
+			cfg.Modules = make(map[string]map[string]any)
+		}
+		if cfg.Modules[mod] == nil {
+			cfg.Modules[mod] = make(map[string]any)
+		}
+		cfg.Modules[mod][key] = val
+	}
 }
 
 func lookupEnvAny(keys ...string) (string, bool) {

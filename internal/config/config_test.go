@@ -122,6 +122,35 @@ func TestLoadEnvOverride(t *testing.T) {
 	}
 }
 
+func TestLoadEnvModuleKeys(t *testing.T) {
+	t.Setenv("SF_MODULE_HIBP_API_KEY", "xyz")
+	t.Setenv("SF_MODULE_HUNTER_HUNTER_API_KEY", "abc")
+	// Malformed entries must be ignored.
+	t.Setenv("SF_MODULE_NOUNDERSCORE", "ignored")
+	t.Setenv("SF_MODULE_TRAILING_", "ignored")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if got := cfg.ModuleOpts("hibp")["api_key"]; got != "xyz" {
+		t.Fatalf("ModuleOpts(hibp)[api_key] = %v, want %q", got, "xyz")
+	}
+
+	if got := cfg.ModuleOpts("hunter")["hunter_api_key"]; got != "abc" {
+		t.Fatalf("ModuleOpts(hunter)[hunter_api_key] = %v, want %q", got, "abc")
+	}
+
+	if _, ok := cfg.Modules["noundersco"]; ok {
+		t.Fatal("malformed SF_MODULE_NOUNDERSCORE was injected")
+	}
+
+	if got := cfg.Modules["trailing"]; got != nil {
+		t.Fatalf("SF_MODULE_TRAILING_ should be ignored, got %v", got)
+	}
+}
+
 func TestModuleOpts(t *testing.T) {
 	cfg := &Config{
 		Modules: map[string]map[string]any{
