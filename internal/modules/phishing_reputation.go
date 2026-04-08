@@ -140,7 +140,7 @@ func (m *hostFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -265,7 +265,7 @@ func (m *ipFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -364,7 +364,7 @@ func (m *ThreatCrowd) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -393,11 +393,11 @@ func (m *ThreatCrowd) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	// Upstream responded 200 — commit the reservation made at entry.
 	// Below this line a malformed response or a non-malicious verdict
 	// still counts as "looked up" and should not be retried.
-	committed = true
 	var payload threatCrowdResponse
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil || payload.Votes >= 0 {
 		return nil, nil
 	}
+	committed = true
 	// Emit the original indicator so the event type (MALICIOUS_IPADDR etc.)
 	// remains a valid IP/domain/email. The permalink is attached via the
 	// source event chain rather than overwriting the indicator string.
@@ -445,7 +445,7 @@ func (m *PhishStats) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -466,14 +466,13 @@ func (m *PhishStats) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — commit the reservation made at entry.
-	committed = true
 	var payload []struct {
 		IP string `json:"ip"`
 	}
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil || len(payload) == 0 {
 		return nil, nil
 	}
+	committed = true
 	if payload[0].IP != evt.Data {
 		return nil, nil
 	}

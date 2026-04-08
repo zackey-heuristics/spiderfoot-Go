@@ -148,7 +148,7 @@ func (m *HackerTarget) HandleEvent(ctx context.Context, evt *event.Event) ([]*ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ func (m *CrtSh) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Eve
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -251,11 +251,11 @@ func (m *CrtSh) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Eve
 	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
 		return nil, nil
 	}
-	committed = true
 	var entries []crtShEntry
 	if err := json.Unmarshal([]byte(resp.Body), &entries); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "crt", evt); err == nil {
 		results = append(results, e)
@@ -313,7 +313,7 @@ func (m *CertSpotter) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -327,11 +327,11 @@ func (m *CertSpotter) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	committed = true
 	var entries []certSpotterIssuance
 	if err := json.Unmarshal([]byte(resp.Body), &entries); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "certspotter", evt); err == nil {
 		results = append(results, e)
@@ -386,7 +386,7 @@ func (m *DNSDumpster) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -487,7 +487,7 @@ func (m *CommonCrawl) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -591,7 +591,7 @@ func (m *ArchiveOrg) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -609,11 +609,11 @@ func (m *ArchiveOrg) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	committed = true
 	var ar archiveResponse
 	if err := json.Unmarshal([]byte(resp.Body), &ar); err != nil || ar.ArchivedSnapshots.Closest.URL == "" {
 		return nil, nil
 	}
+	committed = true
 	e, err := event.New(out, ar.ArchivedSnapshots.Closest.URL, "archiveorg", evt)
 	if err != nil {
 		return nil, nil
@@ -673,7 +673,7 @@ func (m *BGPView) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -689,13 +689,13 @@ func (m *BGPView) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 		if err != nil || resp.StatusCode != 200 {
 			return nil, nil
 		}
+		var payload bgpViewIPResponse
+		if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
+			return nil, nil
+		}
 		committed = true
 		if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "bgpview", evt); err == nil {
 			results = append(results, e)
-		}
-		var payload bgpViewIPResponse
-		if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
-			return results, nil
 		}
 		for _, p := range payload.Data.Prefixes {
 			if p.ASN.ASN != 0 {
@@ -715,9 +715,12 @@ func (m *BGPView) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 		if err != nil || resp.StatusCode != 200 {
 			return nil, nil
 		}
-		committed = true
 		var payload bgpViewASNResponse
-		if err := json.Unmarshal([]byte(resp.Body), &payload); err == nil && len(payload.Data.OwnerAddress) > 0 {
+		if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
+			return nil, nil
+		}
+		committed = true
+		if len(payload.Data.OwnerAddress) > 0 {
 			addr := strings.Join(payload.Data.OwnerAddress, ", ")
 			if e, err := event.New(event.PHYSICAL_ADDRESS, addr, "bgpview", evt); err == nil {
 				results = append(results, e)
@@ -768,7 +771,7 @@ func (m *RIPE) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -781,14 +784,14 @@ func (m *RIPE) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
+	var payload ripeNetworkInfoResponse
+	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
+		return nil, nil
+	}
 	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "ripe", evt); err == nil {
 		results = append(results, e)
-	}
-	var payload ripeNetworkInfoResponse
-	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
-		return results, nil
 	}
 	if payload.Data.Prefix != "" {
 		if e, err := event.New(event.NETBLOCK_MEMBER, payload.Data.Prefix, "ripe", evt); err == nil {
@@ -839,7 +842,7 @@ func (m *Robtex) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -855,18 +858,18 @@ func (m *Robtex) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	committed = true
-	var results []*event.Event
-	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "robtex", evt); err == nil {
-		results = append(results, e)
-	}
 	var payload struct {
 		Pas []struct {
 			O string `json:"o"`
 		} `json:"pas"`
 	}
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
-		return results, nil
+		return nil, nil
+	}
+	committed = true
+	var results []*event.Event
+	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "robtex", evt); err == nil {
+		results = append(results, e)
 	}
 	emitted := make(map[string]bool)
 	for _, rec := range payload.Pas {

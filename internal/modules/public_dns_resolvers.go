@@ -114,7 +114,7 @@ func (m *publicDNSResolver) HandleEvent(ctx context.Context, evt *event.Event) (
 	// Atomically reserve the indicator via seenSet.begin. Concurrent
 	// callers for the same indicator wait on the in-flight owner
 	// and retry if the owner fails transiently.
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}

@@ -81,7 +81,7 @@ func (m *RiskIQ) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -104,12 +104,11 @@ func (m *RiskIQ) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp riskIQResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "riskiq", evt); err == nil {
 		results = append(results, e)
@@ -186,7 +185,7 @@ func (m *IntelX) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -220,12 +219,11 @@ func (m *IntelX) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp intelxResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "intelx", evt); err == nil {
 		results = append(results, e)
@@ -314,7 +312,7 @@ func (m *Dehashed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -340,12 +338,11 @@ func (m *Dehashed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp dehashedResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "dehashed", evt); err == nil {
 		results = append(results, e)
@@ -452,7 +449,7 @@ func (m *LeakIX) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -477,12 +474,11 @@ func (m *LeakIX) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp leakixResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "leakix", evt); err == nil {
 		results = append(results, e)
@@ -582,7 +578,7 @@ func (m *ThreatFox) HandleEvent(ctx context.Context, evt *event.Event) ([]*event
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -603,12 +599,11 @@ func (m *ThreatFox) HandleEvent(ctx context.Context, evt *event.Event) ([]*event
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp threatFoxResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	if resp.QueryStatus != "ok" || len(resp.Data) == 0 {
 		return nil, nil
 	}
@@ -691,7 +686,7 @@ func (m *URLScan) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -706,12 +701,11 @@ func (m *URLScan) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp urlscanResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "urlscan", evt); err == nil {
 		results = append(results, e)
@@ -814,7 +808,7 @@ func (m *XForce) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -834,12 +828,11 @@ func (m *XForce) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp xforceResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	if len(resp.Malware) == 0 {
 		return nil, nil
 	}

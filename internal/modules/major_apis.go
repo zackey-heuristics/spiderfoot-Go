@@ -190,7 +190,7 @@ func (m *Shodan) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -208,12 +208,11 @@ func (m *Shodan) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var host shodanHost
 	if err := json.Unmarshal(body, &host); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "shodan", evt); err == nil {
 		results = append(results, e)
@@ -335,7 +334,7 @@ func (m *VirusTotal) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -368,12 +367,11 @@ func (m *VirusTotal) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var report vtReport
 	if err := json.Unmarshal(body, &report); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if len(report.DetectedURLs) > 0 {
 		data := sfURL("VirusTotal ["+evt.Data+"]", detailURL)
@@ -517,7 +515,7 @@ func (m *AbuseIPDB) HandleEvent(ctx context.Context, evt *event.Event) ([]*event
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -664,7 +662,7 @@ func (m *Censys) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -684,12 +682,11 @@ func (m *Censys) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var host censysHost
 	if err := json.Unmarshal(body, &host); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "censys", evt); err == nil {
 		results = append(results, e)
@@ -819,7 +816,7 @@ func (m *GreyNoise) HandleEvent(ctx context.Context, evt *event.Event) ([]*event
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -839,12 +836,11 @@ func (m *GreyNoise) HandleEvent(ctx context.Context, evt *event.Event) ([]*event
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var ctxResp gnContext
 	if err := json.Unmarshal(body, &ctxResp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "greynoise", evt); err == nil {
 		results = append(results, e)
@@ -950,7 +946,7 @@ func (m *IPInfo) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -970,12 +966,11 @@ func (m *IPInfo) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp ipInfoResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	if resp.Country == "" {
 		return nil, nil
 	}
@@ -1048,7 +1043,7 @@ func (m *SecurityTrails) HandleEvent(ctx context.Context, evt *event.Event) ([]*
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -1068,12 +1063,11 @@ func (m *SecurityTrails) HandleEvent(ctx context.Context, evt *event.Event) ([]*
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var resp stSubdomains
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "securitytrails", evt); err == nil {
 		results = append(results, e)

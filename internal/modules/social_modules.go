@@ -82,7 +82,7 @@ func (m *Social) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func (m *Accounts) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -305,7 +305,7 @@ func (m *GitHub) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +398,7 @@ func (m *Twitter) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -466,7 +466,7 @@ func (m *Flickr) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +586,7 @@ func (m *Keybase) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -704,7 +704,7 @@ func (m *Gravatar) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -802,7 +802,7 @@ func (m *SlideShare) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}

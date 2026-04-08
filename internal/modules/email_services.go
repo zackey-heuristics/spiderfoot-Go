@@ -140,7 +140,7 @@ func (m *HaveIBeenPwned) HandleEvent(ctx context.Context, evt *event.Event) ([]*
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -164,8 +164,17 @@ func (m *HaveIBeenPwned) HandleEvent(ctx context.Context, evt *event.Event) ([]*
 	if !ok {
 		return nil, nil
 	}
-	// 200 or 404 reached — definitive answer. Commit regardless of
-	// pastes success below so later duplicate events are skipped.
+	// Parse before committing — a 200 with garbage JSON is a transient
+	// upstream failure and should not suppress future retries. An empty
+	// body (the 404 "no breach" case) is itself a definitive answer.
+	var breaches []hibpBreach
+	if len(breachBody) > 0 {
+		if err := json.Unmarshal(breachBody, &breaches); err != nil {
+			return nil, nil
+		}
+	}
+	// Definitive response from HIBP (valid JSON or empty 404 body).
+	// Commit regardless of pastes success below so later duplicates skip.
 	committed = true
 
 	var results []*event.Event
@@ -173,18 +182,13 @@ func (m *HaveIBeenPwned) HandleEvent(ctx context.Context, evt *event.Event) ([]*
 	if evt.Type == event.PHONE_NUMBER {
 		compType = event.PHONE_NUMBER_COMPROMISED
 	}
-	if len(breachBody) > 0 {
-		var breaches []hibpBreach
-		if err := json.Unmarshal(breachBody, &breaches); err == nil {
-			for _, b := range breaches {
-				if b.Name == "" {
-					continue
-				}
-				data := fmt.Sprintf("%s [%s]", evt.Data, b.Name)
-				if e, err := event.New(compType, data, "haveibeenpwned", evt); err == nil {
-					results = append(results, e)
-				}
-			}
+	for _, b := range breaches {
+		if b.Name == "" {
+			continue
+		}
+		data := fmt.Sprintf("%s [%s]", evt.Data, b.Name)
+		if e, err := event.New(compType, data, "haveibeenpwned", evt); err == nil {
+			results = append(results, e)
 		}
 	}
 
@@ -288,7 +292,7 @@ func (m *Hunter) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -311,15 +315,15 @@ func (m *Hunter) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
+	var payload hunterResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, nil
+	}
 	committed = true
 
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "hunter", evt); err == nil {
 		results = append(results, e)
-	}
-	var payload hunterResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return results, nil
 	}
 	for _, em := range payload.Data.Emails {
 		if em.Value == "" {
@@ -445,7 +449,7 @@ func (m *Clearbit) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -467,15 +471,15 @@ func (m *Clearbit) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
+	var payload clearbitResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, nil
+	}
 	committed = true
 
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "clearbit", evt); err == nil {
 		results = append(results, e)
-	}
-	var payload clearbitResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return results, nil
 	}
 	if payload.Person != nil && payload.Person.Name.FullName != "" {
 		name := "Possible full name: " + payload.Person.Name.FullName
@@ -612,7 +616,7 @@ func (m *EmailRep) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -633,12 +637,11 @@ func (m *EmailRep) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
-	committed = true
-
 	var payload emailRepResponse
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return nil, nil
 	}
+	committed = true
 	if !payload.Details.CredentialsLeaked && !payload.Details.MaliciousActivity {
 		return nil, nil
 	}

@@ -152,7 +152,7 @@ func (m *ipDNSBL) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	// callers for the same indicator either wait on the in-flight
 	// owner (and retry if that owner fails transiently) or skip when
 	// a committed result already exists.
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}

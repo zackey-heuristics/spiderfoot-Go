@@ -120,7 +120,7 @@ func (m *GoogleSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*ev
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -139,17 +139,16 @@ func (m *GoogleSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*ev
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — commit the reservation made at entry.
-	// Transient failures above fall through to the defer which releases
-	// the reservation so a later event for the same indicator can retry.
+	// Parse before committing so a 200 with garbage JSON does not
+	// permanently suppress retries (Codex adversarial review fix).
+	var payload gcsResponse
+	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
+		return nil, nil
+	}
 	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "googlesearch", evt); err == nil {
 		results = append(results, e)
-	}
-	var payload gcsResponse
-	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
-		return results, nil
 	}
 	emitted := make(map[string]bool)
 	for _, it := range payload.Items {
@@ -211,7 +210,7 @@ func (m *BingSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -243,15 +242,15 @@ func (m *BingSearch) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil {
 		return nil, nil
 	}
-	// Upstream returned 200 — commit the reservation made at entry.
+	// Parse before committing (Codex adversarial review fix).
+	var payload bingResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, nil
+	}
 	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, string(body), "bingsearch", evt); err == nil {
 		results = append(results, e)
-	}
-	var payload bingResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return results, nil
 	}
 	emitted := make(map[string]bool)
 	for _, v := range payload.WebPages.Value {
@@ -309,7 +308,7 @@ func (m *DuckDuckGo) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -323,14 +322,11 @@ func (m *DuckDuckGo) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — commit the reservation made at entry.
-	// Transient failures above fall through to the defer which releases
-	// the reservation so a later event for the same indicator can retry.
-	committed = true
 	var payload ddgResponse
 	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil || payload.Heading == "" {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if payload.AbstractText != "" {
 		if e, err := event.New(event.DESCRIPTION_ABSTRACT, payload.AbstractText, "duckduckgo", evt); err == nil {
@@ -381,7 +377,7 @@ func (m *Sublist3r) HandleEvent(ctx context.Context, evt *event.Event) ([]*event
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -396,14 +392,11 @@ func (m *Sublist3r) HandleEvent(ctx context.Context, evt *event.Event) ([]*event
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — commit the reservation made at entry.
-	// Transient failures above fall through to the defer which releases
-	// the reservation so a later event for the same indicator can retry.
-	committed = true
 	var hosts []string
 	if err := json.Unmarshal([]byte(resp.Body), &hosts); err != nil {
 		return nil, nil
 	}
+	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "sublist3r", evt); err == nil {
 		results = append(results, e)
@@ -462,7 +455,7 @@ func (m *StackOverflow) HandleEvent(ctx context.Context, evt *event.Event) ([]*e
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -476,17 +469,14 @@ func (m *StackOverflow) HandleEvent(ctx context.Context, evt *event.Event) ([]*e
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — commit the reservation made at entry.
-	// Transient failures above fall through to the defer which releases
-	// the reservation so a later event for the same indicator can retry.
+	var payload stackResponse
+	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
+		return nil, nil
+	}
 	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "stackoverflow", evt); err == nil {
 		results = append(results, e)
-	}
-	var payload stackResponse
-	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
-		return results, nil
 	}
 	target := strings.ToLower(evt.Data)
 	emitted := make(map[string]bool)
@@ -551,7 +541,7 @@ func (m *SearchCode) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if evt == nil || evt.Data == "" {
 		return nil, nil
 	}
-	skip, finish, err := m.seen.begin(ctx, evt.Data)
+	skip, finish, err := m.seen.begin(ctx, string(evt.Type)+":"+evt.Data)
 	if err != nil {
 		return nil, err
 	}
@@ -566,17 +556,14 @@ func (m *SearchCode) HandleEvent(ctx context.Context, evt *event.Event) ([]*even
 	if err != nil || resp.StatusCode != 200 {
 		return nil, nil
 	}
-	// Upstream responded 200 — commit the reservation made at entry.
-	// Transient failures above fall through to the defer which releases
-	// the reservation so a later event for the same indicator can retry.
+	var payload searchcodeResponse
+	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
+		return nil, nil
+	}
 	committed = true
 	var results []*event.Event
 	if e, err := event.New(event.RAW_RIR_DATA, resp.Body, "searchcode", evt); err == nil {
 		results = append(results, e)
-	}
-	var payload searchcodeResponse
-	if err := json.Unmarshal([]byte(resp.Body), &payload); err != nil {
-		return results, nil
 	}
 	emittedURL := make(map[string]bool)
 	emittedEmail := make(map[string]bool)
