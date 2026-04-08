@@ -1,14 +1,18 @@
 // Package modules — Batch 16: More free reputation & blocklist feeds.
 //
-// This file ports six additional no-auth feed modules that all reuse
+// This file ports four additional no-auth feed modules that all reuse
 // the existing ipFeed / hostFeed generics from phishing_reputation.go:
 //
 //   - talosintel       — Cisco Talos (Snort) IP block list
 //   - alienvaultiprep  — AlienVault OTX IP reputation (legacy generic feed)
 //   - greensnow        — greensnow.co abusive IP feed
-//   - vxvault          — vxvault.net malware URL list (host extract)
 //   - stevenblack      — StevenBlack consolidated hosts blocklist
-//   - multiproxy       — multiproxy.org open proxy IP list (ip:port)
+//
+// Note: vxvault and multiproxy were deliberately dropped because their
+// upstream sources are plaintext HTTP only. Ingesting unauthenticated
+// reputation data would let any on-path attacker inject false
+// positives/negatives into scan results; see Codex adversarial review
+// 2026-04-09 for the trust-boundary rationale.
 package modules
 
 import (
@@ -44,31 +48,11 @@ func parseAlienvaultIPRep(body string) map[string]bool {
 	return out
 }
 
-// parseVxVault parses the vxvault.net URL list. Only lines beginning
-// with "http" are URLs; the host is the third '/' segment.
-func parseVxVault(body string) map[string]bool {
-	out := make(map[string]bool)
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "http") {
-			continue
-		}
-		parts := strings.Split(line, "/")
-		if len(parts) < 3 {
-			continue
-		}
-		host := strings.SplitN(parts[2], ":", 2)[0]
-		host = strings.ToLower(host)
-		if host == "" || !strings.Contains(host, ".") {
-			continue
-		}
-		out[host] = true
-	}
-	return out
-}
-
 // parseStevenBlack parses the StevenBlack hosts file. Non-comment lines
-// have the form "0.0.0.0 host"; we take the second whitespace token.
+// have the form "0.0.0.0 host1 [host2 ...]"; every hostname token after
+// the leading IP is recorded (hosts-file syntax permits multiple aliases
+// on one line, and taking only the first would silently drop entries).
+// Inline comments introduced with '#' are stripped.
 func parseStevenBlack(body string) map[string]bool {
 	out := make(map[string]bool)
 	for _, line := range strings.Split(body, "\n") {
@@ -76,35 +60,25 @@ func parseStevenBlack(body string) map[string]bool {
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
+		// Strip inline comments.
+		if i := strings.Index(line, "#"); i >= 0 {
+			line = line[:i]
+		}
 		fields := strings.Fields(line)
 		if len(fields) < 2 {
 			continue
 		}
-		host := strings.ToLower(fields[1])
-		if host == "" || !strings.Contains(host, ".") || host == "0.0.0.0" {
-			continue
-		}
-		// Skip loopback aliases that Steven Black's base file carries.
-		if host == "localhost" || host == "localhost.localdomain" {
-			continue
-		}
-		out[host] = true
-	}
-	return out
-}
-
-// parseMultiProxy parses the multiproxy.org proxy list. Each line is
-// "<ip>:<port>"; we keep the IP half and discard malformed entries.
-func parseMultiProxy(body string) map[string]bool {
-	out := make(map[string]bool)
-	for _, line := range strings.Split(body, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		ip := strings.SplitN(line, ":", 2)[0]
-		if net.ParseIP(ip) != nil {
-			out[ip] = true
+		// fields[0] is the address (usually 0.0.0.0); everything after
+		// is one or more host aliases.
+		for _, raw := range fields[1:] {
+			host := strings.ToLower(raw)
+			if host == "" || !strings.Contains(host, ".") || host == "0.0.0.0" {
+				continue
+			}
+			if host == "localhost" || host == "localhost.localdomain" {
+				continue
+			}
+			out[host] = true
 		}
 	}
 	return out
@@ -133,28 +107,12 @@ func init() {
 			url:     "https://blocklist.greensnow.co/greensnow.txt",
 		}
 	})
-	module.Register("vxvault", func() module.Module {
-		return &hostFeed{
-			name:    "vxvault",
-			summary: "Check if a host is in the vxvault.net malware URL list.",
-			url:     "http://vxvault.net/URL_List.php",
-			parser:  parseVxVault,
-		}
-	})
 	module.Register("stevenblack", func() module.Module {
 		return &hostFeed{
 			name:    "stevenblack",
 			summary: "Check if a host is in the StevenBlack consolidated hosts blocklist.",
 			url:     "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
 			parser:  parseStevenBlack,
-		}
-	})
-	module.Register("multiproxy", func() module.Module {
-		return &ipFeed{
-			name:    "multiproxy",
-			summary: "Check if an IP is in the multiproxy.org open proxy list.",
-			url:     "http://multiproxy.org/txt_all/proxy.txt",
-			parser:  parseMultiProxy,
 		}
 	})
 }

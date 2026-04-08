@@ -6,8 +6,7 @@ import (
 )
 
 var threatFeeds2Names = []string{
-	"talosintel", "alienvaultiprep", "greensnow",
-	"vxvault", "stevenblack", "multiproxy",
+	"talosintel", "alienvaultiprep", "greensnow", "stevenblack",
 }
 
 func TestThreatFeeds2Registered(t *testing.T) {
@@ -84,29 +83,19 @@ func TestParseAlienvaultIPRep(t *testing.T) {
 	}
 }
 
-func TestParseVxVault(t *testing.T) {
-	body := "# header\nhttp://Evil.Example.com/x.exe\nhttps://bad.example.org:8080/y\nnot a url\n"
-	m := parseVxVault(body)
-	if !m["evil.example.com"] || !m["bad.example.org"] {
-		t.Errorf("parseVxVault: %v", m)
-	}
-}
-
 func TestParseStevenBlack(t *testing.T) {
-	body := "# header\n0.0.0.0 miner.example.com\n0.0.0.0 bad.example.org\n127.0.0.1 localhost\n"
+	body := "# header\n" +
+		"0.0.0.0 miner.example.com\n" +
+		"0.0.0.0 bad.example.org\n" +
+		"0.0.0.0 a.example b.example c.example # inline comment\n" +
+		"127.0.0.1 localhost\n"
 	m := parseStevenBlack(body)
-	if !m["miner.example.com"] || !m["bad.example.org"] {
-		t.Errorf("parseStevenBlack: %v", m)
+	for _, want := range []string{"miner.example.com", "bad.example.org", "a.example", "b.example", "c.example"} {
+		if !m[want] {
+			t.Errorf("parseStevenBlack: missing %q in %v", want, m)
+		}
 	}
 	if m["localhost"] {
 		t.Errorf("parseStevenBlack: should skip localhost")
-	}
-}
-
-func TestParseMultiProxy(t *testing.T) {
-	body := "# header\n1.2.3.4:8080\n5.6.7.8:3128\nbogus\n"
-	m := parseMultiProxy(body)
-	if !m["1.2.3.4"] || !m["5.6.7.8"] || m["bogus"] {
-		t.Errorf("parseMultiProxy: %v", m)
 	}
 }

@@ -6,9 +6,9 @@ without replaying the original planning conversation.
 
 ## Session handoff (last updated 2026-04-09)
 
-**Branch**: `feature/1-go-rewrite` — Batch 16 committed locally.
-**Last commit**: Batch 16 — More Free Reputation Feeds.
-**Registered modules**: 113 / 234.
+**Branch**: `feature/1-go-rewrite` — Batch 16 pushed; adversarial-review follow-up applied.
+**Last commit**: Batch 16 follow-up — drop plaintext-HTTP feeds + fix stevenblack alias parsing.
+**Registered modules**: 111 / 234.
 **Next batch**: **Batch 17** — to be selected from remaining Python modules. Follow the plan-implement-test-review-commit cycle established in Batches 11-14.
 
 **Batch 14 Codex adversarial review**: Ran against the full working tree. All 3 findings were against pre-existing untracked files (`.devcontainer/`, `.claude/settings.json`) that are explicitly out-of-scope and NOT part of the Batch 14 commit. The Batch 14 files (`security_intel.go`, `security_intel_test.go`) passed adversarial review with zero findings.
@@ -48,7 +48,7 @@ without replaying the original planning conversation.
 | 15 — Free Threat Feeds + Blockchain | (local) | abusechfeodo, abusechssl, abusechurlhaus, botvrij, cinsscore, blocklistde, coinblocker, blockchain | 8 modules in `threat_feeds.go`. Seven reuse `hostFeed`/`ipFeed` generics from `phishing_reputation.go`; only `blockchain` (per-event blockchain.info wallet-balance JSON lookup for `BITCOIN_ADDRESS`) is custom. The `abuse_ch` Python module is split into three single-word Go modules so each feed has its own cache lifecycle and satisfies the env-var single-underscore rule. URLhaus parser is a fast-path host extractor mirroring Python's `split('/')` shortcut. |
 | 16 — More Free Reputation Feeds | (local) | talosintel, alienvaultiprep, greensnow, vxvault, stevenblack, multiproxy | 6 modules in `threat_feeds2.go`. All reuse `ipFeed`/`hostFeed` generics. Adds an optional `parser` field to `ipFeed` so feeds with non-plain-IP line formats (alienvaultiprep `IP #desc`, multiproxy `IP:port`) can override `parseIPList` without copying the HandleEvent machinery. vxvault extracts hosts from URL lines; stevenblack parses hosts-file format skipping `localhost` aliases. |
 
-**Total registered modules: 113** (dns_resolve + stor_db pre-existing, +103 new)
+**Total registered modules: 111** (dns_resolve + stor_db pre-existing, +109 new; vxvault + multiproxy dropped post-review)
 
 ## API Key Convention (established in Batch 11)
 
