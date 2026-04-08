@@ -6,10 +6,10 @@ without replaying the original planning conversation.
 
 ## Session handoff (last updated 2026-04-09)
 
-**Branch**: `feature/1-go-rewrite` — Batch 15 committed locally, NOT yet pushed.
-**Last commit**: Batch 15 — Free Threat Feeds + Blockchain (see git log).
-**Registered modules**: 107 / 234.
-**Next batch**: **Batch 16** — to be selected from remaining Python modules. Follow the plan-implement-test-review-commit cycle established in Batches 11-14.
+**Branch**: `feature/1-go-rewrite` — Batch 16 committed locally.
+**Last commit**: Batch 16 — More Free Reputation Feeds.
+**Registered modules**: 113 / 234.
+**Next batch**: **Batch 17** — to be selected from remaining Python modules. Follow the plan-implement-test-review-commit cycle established in Batches 11-14.
 
 **Batch 14 Codex adversarial review**: Ran against the full working tree. All 3 findings were against pre-existing untracked files (`.devcontainer/`, `.claude/settings.json`) that are explicitly out-of-scope and NOT part of the Batch 14 commit. The Batch 14 files (`security_intel.go`, `security_intel_test.go`) passed adversarial review with zero findings.
 
@@ -46,8 +46,9 @@ without replaying the original planning conversation.
 | — Dedup key + commit ordering fix | `d380caf6` | — | Codex adversarial review of Batch 13 flagged two high-severity issues applying across Batches 7-13. (1) `seenSet.begin` key composed as `string(evt.Type)+":"+evt.Data` so IP_ADDRESS vs AFFILIATE_IPADDR (and DOMAIN_NAME vs INTERNET_NAME) no longer collide and drop findings. (2) `committed = true` moved to after `json.Unmarshal` success, so an HTTP 200 with garbage JSON no longer permanently suppresses retries. HIBP retains 404-definitive semantics. Text-based parsers (AbuseIPDB/hostFeed/ipFeed) unchanged. |
 | 14 — Security/Threat Intel | `658b5752` | googlesafebrowsing, metadefender, hybridanalysis, openbugbounty | 4 modules in `security_intel.go`. `openbugbounty` is free (HTML scrape via regex). `hybrid_analysis` renamed to `hybridanalysis` (single-word) to satisfy the `SF_MODULE_<MOD>_<KEY>` split-on-first-underscore rule. Adds local `postHybridForm` helper for `application/x-www-form-urlencoded` POSTs since `majorAPIFetchPOST` forces JSON. Adversarial review: zero findings against Batch 14 files. |
 | 15 — Free Threat Feeds + Blockchain | (local) | abusechfeodo, abusechssl, abusechurlhaus, botvrij, cinsscore, blocklistde, coinblocker, blockchain | 8 modules in `threat_feeds.go`. Seven reuse `hostFeed`/`ipFeed` generics from `phishing_reputation.go`; only `blockchain` (per-event blockchain.info wallet-balance JSON lookup for `BITCOIN_ADDRESS`) is custom. The `abuse_ch` Python module is split into three single-word Go modules so each feed has its own cache lifecycle and satisfies the env-var single-underscore rule. URLhaus parser is a fast-path host extractor mirroring Python's `split('/')` shortcut. |
+| 16 — More Free Reputation Feeds | (local) | talosintel, alienvaultiprep, greensnow, vxvault, stevenblack, multiproxy | 6 modules in `threat_feeds2.go`. All reuse `ipFeed`/`hostFeed` generics. Adds an optional `parser` field to `ipFeed` so feeds with non-plain-IP line formats (alienvaultiprep `IP #desc`, multiproxy `IP:port`) can override `parseIPList` without copying the HandleEvent machinery. vxvault extracts hosts from URL lines; stevenblack parses hosts-file format skipping `localhost` aliases. |
 
-**Total registered modules: 107** (dns_resolve + stor_db pre-existing, +97 new)
+**Total registered modules: 113** (dns_resolve + stor_db pre-existing, +103 new)
 
 ## API Key Convention (established in Batch 11)
 

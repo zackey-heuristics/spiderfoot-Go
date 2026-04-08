@@ -86,7 +86,7 @@ go test -run TestName ./internal/event/...
 
 - **Phase 1** (DONE) — Core framework: event bus, module system, scan orchestrator, SQLite storage, REST API skeleton, CLI, CI
 - **Phase 2** (DONE) — Full Web UI: browser-based scan creation/management/results
-- **Phase 3** (IN PROGRESS) — Module porting: 107 / 234 modules ported (Batches 0-15 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`. **Next**: Batch 16. See the "Session handoff" block at the top of that file for a resume prompt.
+- **Phase 3** (IN PROGRESS) — Module porting: 113 / 234 modules ported (Batches 0-16 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`. **Next**: Batch 17. See the "Session handoff" block at the top of that file for a resume prompt.
 - **Phase 4** (TODO) — Correlation engine, advanced features
 
 ### Phase 3 Progress
@@ -107,7 +107,8 @@ go test -run TestName ./internal/event/...
 - **Batch 14**: Security/Threat Intel — googlesafebrowsing, metadefender, hybridanalysis, openbugbounty. 4 modules in `security_intel.go`. `openbugbounty` is free (no auth, HTML scrape via regex). `hybrid_analysis` renamed to `hybridanalysis` (single-word) to comply with the `SF_MODULE_<MOD>_<KEY>` split-on-first-underscore constraint. Adds a local `postHybridForm` helper for `application/x-www-form-urlencoded` POSTs since `majorAPIFetchPOST` forces JSON content-type.
 - **Batch 15**: Free Threat Feeds + Blockchain — abusechfeodo, abusechssl, abusechurlhaus, botvrij, cinsscore, blocklistde, coinblocker, blockchain. 8 modules in `threat_feeds.go`. Seven reuse the existing `hostFeed`/`ipFeed` generics from `phishing_reputation.go`; only `blockchain` (per-event blockchain.info wallet-balance JSON lookup for `BITCOIN_ADDRESS`) is custom. The `abuse_ch` Python module is split into three single-word Go modules (`abusechfeodo`, `abusechssl`, `abusechurlhaus`) so each independent feed lifecycle has its own cache and the names satisfy the `SF_MODULE_<MOD>_<KEY>` split-on-first-underscore constraint. URLhaus parser is a fast-path host extractor mirroring the Python `split('/')` shortcut.
 - **Dedup refactor**: All 27 HTTP-backed and 2 DNS-backed HandleEvents in Batch 1-10 now share a single `seenSet.begin` primitive (defined in `internal/modules/free_apis.go`) with atomic reserve, deferred `finish(committed bool)` callback, skip-on-in-flight semantics (no worker blocking), and a pointer-equality generation guard so stale handlers cannot corrupt a successor scan's state after `clear()`. Sequential events retry automatically after a transient HTTP/DNS failure via the commit/release mechanism. See Codex adversarial review history (rounds 1-10) summarized in the progress doc.
-- **Next**: Batch 16 — see `.claude/plans/phase3-module-port-progress.md`.
+- **Batch 16**: More Free Reputation Feeds — talosintel, alienvaultiprep, greensnow, vxvault, stevenblack, multiproxy. 6 modules in `threat_feeds2.go`. All reuse `ipFeed`/`hostFeed` generics. Adds an optional `parser` field to `ipFeed` so feeds whose wire format is not a plain IP per line (alienvaultiprep `IP #desc`, multiproxy `IP:port`) can override `parseIPList` without duplicating HandleEvent. vxvault extracts hosts from URL lines; stevenblack parses hosts-file format while skipping `localhost` aliases.
+- **Next**: Batch 17 — see `.claude/plans/phase3-module-port-progress.md`.
 
 ### Phase 3 Build Notes (this devcontainer)
 - `go vet` segfaults — always pass `-vet=off` to `go test`

@@ -218,8 +218,11 @@ type ipFeed struct {
 	name    string
 	summary string
 	url     string
-	feed    fetchOnce
-	seen    seenSet
+	// parser, if set, overrides the default parseIPList. Used by feeds
+	// whose on-wire format carries extra columns or inline scores.
+	parser func(body string) map[string]bool
+	feed   fetchOnce
+	seen   seenSet
 }
 
 // Meta returns module metadata.
@@ -289,7 +292,12 @@ func (m *ipFeed) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 	}
 	// Feed loaded successfully — commit the reservation made at entry.
 	committed = true
-	ips := parseIPList(body)
+	var ips map[string]bool
+	if m.parser != nil {
+		ips = m.parser(body)
+	} else {
+		ips = parseIPList(body)
+	}
 	if !ips[evt.Data] {
 		return nil, nil
 	}
