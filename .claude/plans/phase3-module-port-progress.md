@@ -6,10 +6,10 @@ without replaying the original planning conversation.
 
 ## Session handoff (last updated 2026-04-09)
 
-**Branch**: `feature/1-go-rewrite` — Batch 16 pushed; adversarial-review follow-up applied.
-**Last commit**: Batch 16 follow-up — drop plaintext-HTTP feeds + fix stevenblack alias parsing.
-**Registered modules**: 111 / 234.
-**Next batch**: **Batch 17** — to be selected from remaining Python modules. Follow the plan-implement-test-review-commit cycle established in Batches 11-14.
+**Branch**: `feature/1-go-rewrite` — Batch 17 committed locally.
+**Last commit**: Batch 17 — IP/domain intel APIs (pulsedive, binaryedge, fraudguard, ipqualityscore, fullcontact, spyonweb).
+**Registered modules**: 117 / 234.
+**Next batch**: **Batch 18** — to be selected from remaining Python modules. Follow the plan-implement-test-review-commit cycle established in Batches 11-14.
 
 **Batch 14 Codex adversarial review**: Ran against the full working tree. All 3 findings were against pre-existing untracked files (`.devcontainer/`, `.claude/settings.json`) that are explicitly out-of-scope and NOT part of the Batch 14 commit. The Batch 14 files (`security_intel.go`, `security_intel_test.go`) passed adversarial review with zero findings.
 
@@ -47,8 +47,9 @@ without replaying the original planning conversation.
 | 14 — Security/Threat Intel | `658b5752` | googlesafebrowsing, metadefender, hybridanalysis, openbugbounty | 4 modules in `security_intel.go`. `openbugbounty` is free (HTML scrape via regex). `hybrid_analysis` renamed to `hybridanalysis` (single-word) to satisfy the `SF_MODULE_<MOD>_<KEY>` split-on-first-underscore rule. Adds local `postHybridForm` helper for `application/x-www-form-urlencoded` POSTs since `majorAPIFetchPOST` forces JSON. Adversarial review: zero findings against Batch 14 files. |
 | 15 — Free Threat Feeds + Blockchain | (local) | abusechfeodo, abusechssl, abusechurlhaus, botvrij, cinsscore, blocklistde, coinblocker, blockchain | 8 modules in `threat_feeds.go`. Seven reuse `hostFeed`/`ipFeed` generics from `phishing_reputation.go`; only `blockchain` (per-event blockchain.info wallet-balance JSON lookup for `BITCOIN_ADDRESS`) is custom. The `abuse_ch` Python module is split into three single-word Go modules so each feed has its own cache lifecycle and satisfies the env-var single-underscore rule. URLhaus parser is a fast-path host extractor mirroring Python's `split('/')` shortcut. |
 | 16 — More Free Reputation Feeds | (local) | talosintel, alienvaultiprep, greensnow, vxvault, stevenblack, multiproxy | 6 modules in `threat_feeds2.go`. All reuse `ipFeed`/`hostFeed` generics. Adds an optional `parser` field to `ipFeed` so feeds with non-plain-IP line formats (alienvaultiprep `IP #desc`, multiproxy `IP:port`) can override `parseIPList` without copying the HandleEvent machinery. vxvault extracts hosts from URL lines; stevenblack parses hosts-file format skipping `localhost` aliases. |
+| 17 — IP/Domain Intel APIs | (local) | pulsedive, binaryedge, fraudguard, ipqualityscore, fullcontact, spyonweb | 6 modules in `ip_intel.go`. All require API keys (vendor-prefixed opts: `pulsedive_api_key`, `binaryedge_api_key`, `fraudguard_api_key_account`+`fraudguard_api_key_password`, `ipqualityscore_api_key`, `fullcontact_api_key`, `spyonweb_api_key`). Exercises Bearer (fullcontact), Basic auth pair (fraudguard), custom header (binaryedge X-Key) and query/path-param (pulsedive, spyonweb, ipqualityscore) auth schemes. fullcontact uses POST to v3 person/company enrich endpoints. Reuses `majorAPIFetch`/`majorAPIFetchPOST`/`basicAuthHeader` from `major_apis.go`. |
 
-**Total registered modules: 111** (dns_resolve + stor_db pre-existing, +109 new; vxvault + multiproxy dropped post-review)
+**Total registered modules: 117** (dns_resolve + stor_db pre-existing, +115 new; vxvault + multiproxy dropped post-review)
 
 ## API Key Convention (established in Batch 11)
 
