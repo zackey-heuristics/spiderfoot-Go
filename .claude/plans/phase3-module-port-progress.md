@@ -7,13 +7,15 @@ without replaying the original planning conversation.
 ## Session handoff (last updated 2026-04-09)
 
 **Branch**: `feature/1-go-rewrite` — all work pushed to origin.
-**Last commit**: `d380caf6` (Codex adversarial review fixes for Batches 7-13).
-**Registered modules**: 95 / 234.
-**Next batch**: **Batch 14 — Security/Threat Intel** (googlesafebrowsing, metadefender, hybrid_analysis, openbugbounty). Follow the plan-implement-test-review-commit cycle established in Batches 11-13.
+**Last commit**: `658b5752` (Batch 14 — Security/Threat Intel).
+**Registered modules**: 99 / 234.
+**Next batch**: **Batch 15** — to be selected from remaining Python modules. Follow the plan-implement-test-review-commit cycle established in Batches 11-14.
+
+**Batch 14 Codex adversarial review**: Ran against the full working tree. All 3 findings were against pre-existing untracked files (`.devcontainer/`, `.claude/settings.json`) that are explicitly out-of-scope and NOT part of the Batch 14 commit. The Batch 14 files (`security_intel.go`, `security_intel_test.go`) passed adversarial review with zero findings.
 
 **To resume in a fresh session**, paste this prompt:
 
-> SpiderFoot-Go の Phase 3 Module Port を続けます。現在 95/234 モジュール完了、branch は `feature/1-go-rewrite`、最終コミットは `d380caf6`。`.claude/plans/phase3-module-port-progress.md` と `CLAUDE.md` を読んで現状を把握してから、Batch 14 (Security/Threat Intel: googlesafebrowsing, metadefender, hybrid_analysis, openbugbounty) に進んでください。Batches 11-13 で確立した規約 (vendor-prefixed opt keys、no generic `api_key` fallback、`seen.begin` に `evt.Type+":"+evt.Data` を渡す、JSON parse 成功後に `committed=true`、`url.PathEscape`/`url.QueryEscape`) を踏襲してください。
+> SpiderFoot-Go の Phase 3 Module Port を続けます。現在 99/234 モジュール完了、branch は `feature/1-go-rewrite`、最終コミットは `658b5752`。`.claude/plans/phase3-module-port-progress.md` と `CLAUDE.md` を読んで現状を把握してから、次の Batch 15 を選定・実装してください。Batches 11-14 で確立した規約 (vendor-prefixed opt keys、no generic `api_key` fallback、`seen.begin` に `evt.Type+":"+evt.Data` を渡す、JSON parse 成功後に `committed=true`、`url.PathEscape`/`url.QueryEscape`、env-var 制約のため module 名は single-word) を踏襲してください。
 
 **Known pre-existing untracked files** (DO NOT commit as part of any batch):
 - `.devcontainer/` — separate concern, has security issues flagged by Codex, needs its own PR
@@ -42,8 +44,9 @@ without replaying the original planning conversation.
 | 12 — Major APIs Part 1 | `ac620c8f` | shodan, virustotal, abuseipdb, censys, greynoise, ipinfo, securitytrails | 7 modules in `major_apis.go`; exercises 4 distinct auth schemes (query, header, Basic, Bearer); censys uses uid+secret pair |
 | 13 — Major APIs Part 2 | `8dfc9a9a` | riskiq, intelx, dehashed, leakix, threatfox, urlscan, xforce | 7 modules in `major_apis2.go`; introduces `majorAPIFetchPOST`/`basicAuthHeader` shared helpers. threatfox+urlscan are free (no API key), rest use vendor-prefixed keys; multi-credential modules (riskiq/dehashed/xforce) use two opt keys each |
 | — Dedup key + commit ordering fix | `d380caf6` | — | Codex adversarial review of Batch 13 flagged two high-severity issues applying across Batches 7-13. (1) `seenSet.begin` key composed as `string(evt.Type)+":"+evt.Data` so IP_ADDRESS vs AFFILIATE_IPADDR (and DOMAIN_NAME vs INTERNET_NAME) no longer collide and drop findings. (2) `committed = true` moved to after `json.Unmarshal` success, so an HTTP 200 with garbage JSON no longer permanently suppresses retries. HIBP retains 404-definitive semantics. Text-based parsers (AbuseIPDB/hostFeed/ipFeed) unchanged. |
+| 14 — Security/Threat Intel | `658b5752` | googlesafebrowsing, metadefender, hybridanalysis, openbugbounty | 4 modules in `security_intel.go`. `openbugbounty` is free (HTML scrape via regex). `hybrid_analysis` renamed to `hybridanalysis` (single-word) to satisfy the `SF_MODULE_<MOD>_<KEY>` split-on-first-underscore rule. Adds local `postHybridForm` helper for `application/x-www-form-urlencoded` POSTs since `majorAPIFetchPOST` forces JSON. Adversarial review: zero findings against Batch 14 files. |
 
-**Total registered modules: 95** (dns_resolve + stor_db pre-existing, +93 new)
+**Total registered modules: 99** (dns_resolve + stor_db pre-existing, +97 new)
 
 ## API Key Convention (established in Batch 11)
 

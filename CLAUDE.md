@@ -86,7 +86,7 @@ go test -run TestName ./internal/event/...
 
 - **Phase 1** (DONE) — Core framework: event bus, module system, scan orchestrator, SQLite storage, REST API skeleton, CLI, CI
 - **Phase 2** (DONE) — Full Web UI: browser-based scan creation/management/results
-- **Phase 3** (IN PROGRESS) — Module porting: 95 / 234 modules ported (Batches 0-13 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`. **Next**: Batch 14 (Security/Threat Intel). See the "Session handoff" block at the top of that file for a resume prompt.
+- **Phase 3** (IN PROGRESS) — Module porting: 99 / 234 modules ported (Batches 0-14 complete). Progress and conventions tracked in `.claude/plans/phase3-module-port-progress.md`. **Next**: Batch 15. See the "Session handoff" block at the top of that file for a resume prompt.
 - **Phase 4** (TODO) — Correlation engine, advanced features
 
 ### Phase 3 Progress
@@ -104,8 +104,9 @@ go test -run TestName ./internal/event/...
 - **Batch 11**: Email/Phone Services — haveibeenpwned, hunter, clearbit, emailrep. First batch requiring API keys; establishes the API key convention (per-module prefixed opt keys like `hibp_api_key`, `SF_MODULE_<MOD>_<KEY>` env injection, `module.Meta.RequiresAPIKey` flag). Clearbit's Discover API is deprecated (2023) but the code path is faithfully ported.
 - **Batch 12**: Major APIs Part 1 — shodan, virustotal, abuseipdb, censys, greynoise, ipinfo, securitytrails. 7 modules in `major_apis.go`. Exercises 4 distinct auth schemes (query param, custom header, Basic, Bearer). Censys uses a uid+secret pair (mirrors googlesearch's two-key pattern). AbuseIPDB lazy-loads the high-confidence blacklist once per scan and resets on `Finish()`.
 - **Batch 13**: Major APIs Part 2 — riskiq, intelx, dehashed, leakix, threatfox, urlscan, xforce. 7 modules in `major_apis2.go`. Introduces shared `majorAPIFetchPOST` + `basicAuthHeader` helpers in `major_apis.go`. `threatfox` and `urlscan` are free/no-auth (Meta.RequiresAPIKey=false). Multi-credential modules (riskiq, dehashed, xforce) use two opt keys each.
+- **Batch 14**: Security/Threat Intel — googlesafebrowsing, metadefender, hybridanalysis, openbugbounty. 4 modules in `security_intel.go`. `openbugbounty` is free (no auth, HTML scrape via regex). `hybrid_analysis` renamed to `hybridanalysis` (single-word) to comply with the `SF_MODULE_<MOD>_<KEY>` split-on-first-underscore constraint. Adds a local `postHybridForm` helper for `application/x-www-form-urlencoded` POSTs since `majorAPIFetchPOST` forces JSON content-type.
 - **Dedup refactor**: All 27 HTTP-backed and 2 DNS-backed HandleEvents in Batch 1-10 now share a single `seenSet.begin` primitive (defined in `internal/modules/free_apis.go`) with atomic reserve, deferred `finish(committed bool)` callback, skip-on-in-flight semantics (no worker blocking), and a pointer-equality generation guard so stale handlers cannot corrupt a successor scan's state after `clear()`. Sequential events retry automatically after a transient HTTP/DNS failure via the commit/release mechanism. See Codex adversarial review history (rounds 1-10) summarized in the progress doc.
-- **Next**: Batch 11 (Email/Phone Services — haveibeenpwned, hunter, clearbit, emailrep) — requires designing a per-module API key config system first. See `.claude/plans/phase3-module-port-progress.md`.
+- **Next**: Batch 15 — see `.claude/plans/phase3-module-port-progress.md`.
 
 ### Phase 3 Build Notes (this devcontainer)
 - `go vet` segfaults — always pass `-vet=off` to `go test`

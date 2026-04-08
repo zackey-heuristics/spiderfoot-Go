@@ -113,7 +113,7 @@ batch list, and environment quirks are tracked in
 `.claude/plans/phase3-module-port-progress.md` — read this file before resuming.
 
 - Each batch: implement modules → `go test -vet=off` → `gofmt -w` → commit
-- Batches 0-13 (95 modules) are complete; next is Batch 14 (Security/Threat Intel: googlesafebrowsing, metadefender, hybrid_analysis, openbugbounty). The per-module API key convention is established — see "API Key Convention" in `.claude/plans/phase3-module-port-progress.md`
+- Batches 0-14 (99 modules) are complete; next is Batch 15 (to be selected from remaining Python modules). The per-module API key convention is established — see "API Key Convention" in `.claude/plans/phase3-module-port-progress.md`. Note: module names must be single-word (no underscores) to survive `SF_MODULE_<MOD>_<KEY>` env-var split — e.g. `hybrid_analysis` was registered as `hybridanalysis`.
 - Group similar regex extractors into shared files using the `contentExtractor`
   base type to avoid one-file-per-module bloat
 - **Module dedup**: all HTTP/DNS-backed HandleEvents must use the shared
