@@ -634,7 +634,9 @@ func (m *FullContact) ProducedEvents() []event.Type {
 }
 
 // fullContactCompanyResp is the relevant subset of /v3/company.enrich.
+// Status is the API-level status code (0 or 200 on success).
 type fullContactCompanyResp struct {
+	Status  int `json:"status"`
 	Details struct {
 		Emails    []fullContactValue    `json:"emails"`
 		Phones    []fullContactValue    `json:"phones"`
@@ -662,7 +664,9 @@ type fullContactLocation struct {
 }
 
 // fullContactPersonResp is the relevant subset of /v3/person.enrich.
+// Status is the API-level status code (0 or 200 on success; 404 etc on miss).
 type fullContactPersonResp struct {
+	Status   int    `json:"status"`
 	FullName string `json:"fullName"`
 }
 
@@ -700,6 +704,15 @@ func (m *FullContact) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 		if err := json.Unmarshal(body, &resp); err != nil {
 			return nil, nil
 		}
+		// Only commit when the response carries a real enrichment
+		// signal. An empty/"no match"/error-with-HTTP-200 body leaves
+		// committed=false so later events can still retry.
+		if resp.Status != 0 && resp.Status != 200 {
+			return nil, nil
+		}
+		if resp.FullName == "" {
+			return nil, nil
+		}
 		committed = true
 		if e, err := event.New(event.RAW_RIR_DATA, string(body), "fullcontact", evt); err == nil {
 			results = append(results, e)
@@ -723,6 +736,19 @@ func (m *FullContact) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 	}
 	var resp fullContactCompanyResp
 	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, nil
+	}
+	// API-level success check: bail out (without committing) on
+	// explicit non-success status so transient errors can retry.
+	if resp.Status != 0 && resp.Status != 200 {
+		return nil, nil
+	}
+	// Require at least one substantive enrichment field before
+	// committing. Matches the "silent data loss under degraded
+	// upstream behavior" concern from Codex adversarial review.
+	hasSignal := len(resp.Details.Emails)+len(resp.Details.Phones)+len(resp.Details.Locations)+len(resp.Details.KeyPeople) > 0 ||
+		len(resp.Emails)+len(resp.Phones)+len(resp.Locations) > 0
+	if !hasSignal {
 		return nil, nil
 	}
 	committed = true
@@ -848,7 +874,9 @@ func (m *SpyOnWeb) ProducedEvents() []event.Type {
 	}
 }
 
-// spyOnWebResp is the relevant subset of the SpyOnWeb JSON response.
+// spyOnWebResp is the subset of the SpyOnWeb response used by
+// non-summary endpoints (ip / adsense / analytics). Their result
+// buckets nest a simple {items: {<key>: <last_seen>}} map.
 type spyOnWebResp struct {
 	Status string                                   `json:"status"`
 	Result map[string]map[string]spyOnWebResultData `json:"result"`
@@ -857,6 +885,27 @@ type spyOnWebResp struct {
 // spyOnWebResultData wraps the items map.
 type spyOnWebResultData struct {
 	Items map[string]string `json:"items"`
+}
+
+// spyOnWebSummaryResp is the distinct shape of the /v1/summary
+// response. Per-domain records nest adsense and analytics as sibling
+// objects, each carrying its own items map. Parsing against this
+// explicit shape (instead of approximating via spyOnWebResp) is what
+// Codex adversarial review 2026-04-09 required — the previous
+// approximation would have dropped pivots whenever the real nested
+// shape was returned.
+type spyOnWebSummaryResp struct {
+	Status string `json:"status"`
+	Result struct {
+		Summary map[string]struct {
+			Adsense struct {
+				Items map[string]string `json:"items"`
+			} `json:"adsense"`
+			Analytics struct {
+				Items map[string]string `json:"items"`
+			} `json:"analytics"`
+		} `json:"summary"`
+	} `json:"result"`
 }
 
 // HandleEvent queries SpyOnWeb for the given target.
@@ -908,44 +957,61 @@ func (m *SpyOnWeb) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
+
+	var results []*event.Event
+
+	// Summary endpoint uses a distinct nested shape; parse it
+	// explicitly rather than reusing spyOnWebResp.
+	if endpoint == "summary" {
+		var sresp spyOnWebSummaryResp
+		if err := json.Unmarshal(body, &sresp); err != nil {
+			return nil, nil
+		}
+		if sresp.Status != "found" {
+			return nil, nil
+		}
+		rec, ok := sresp.Result.Summary[qry]
+		if !ok {
+			return nil, nil
+		}
+		committed = true
+		if e, err := event.New(event.RAW_RIR_DATA, string(body), "spyonweb", evt); err == nil {
+			results = append(results, e)
+		}
+		for id := range rec.Adsense.Items {
+			if e, err := event.New(event.WEB_ANALYTICS_ID, "Google AdSense: "+id, "spyonweb", evt); err == nil {
+				results = append(results, e)
+			}
+		}
+		for id := range rec.Analytics.Items {
+			if e, err := event.New(event.WEB_ANALYTICS_ID, "Google Analytics: "+id, "spyonweb", evt); err == nil {
+				results = append(results, e)
+			}
+		}
+		return results, nil
+	}
+
 	var resp spyOnWebResp
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, nil
 	}
-	committed = true
 	if resp.Status != "found" {
 		return nil, nil
 	}
-
-	var results []*event.Event
-	if e, err := event.New(event.RAW_RIR_DATA, string(body), "spyonweb", evt); err == nil {
-		results = append(results, e)
-	}
 	bucket, ok := resp.Result[endpoint]
 	if !ok {
-		return results, nil
+		return nil, nil
 	}
 	rdata, ok := bucket[qry]
 	if !ok {
-		return results, nil
+		return nil, nil
+	}
+	committed = true
+	if e, err := event.New(event.RAW_RIR_DATA, string(body), "spyonweb", evt); err == nil {
+		results = append(results, e)
 	}
 
 	switch endpoint {
-	case "summary":
-		// rdata.Items is map[adsenseOrAnalyticsID]lastSeen, but the
-		// summary endpoint nests adsense+analytics differently. The
-		// Python module reads data.get('adsense') / data.get('analytics')
-		// from the per-domain object — we approximate by emitting all
-		// item keys as WEB_ANALYTICS_ID values prefixed with the bucket.
-		for id := range rdata.Items {
-			label := "Google Analytics: " + id
-			if strings.HasPrefix(id, "pub-") || strings.HasPrefix(id, "ca-pub-") {
-				label = "Google AdSense: " + id
-			}
-			if e, err := event.New(event.WEB_ANALYTICS_ID, label, "spyonweb", evt); err == nil {
-				results = append(results, e)
-			}
-		}
 	case "ip":
 		for host := range rdata.Items {
 			if e, err := event.New(event.CO_HOSTED_SITE, host, "spyonweb", evt); err == nil {
