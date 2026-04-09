@@ -413,6 +413,75 @@ func TestFullHuntEmptyHostsNoCommit(t *testing.T) {
 	}
 }
 
+// TestDNSDBMXMalformedNoPanic is a regression test for Codex
+// adversarial review 2026-04-09: an empty or whitespace-only MX
+// rdata line used to crash the process via parts[-1]. It must now
+// be skipped silently.
+func TestDNSDBMXMalformedNoPanic(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(
+			`{"cond":"begin"}` + "\n" +
+				`{"obj":{"rrtype":"MX","rrname":"example.com.","rdata":[""," ","10 mx.example.com."]}}` + "\n" +
+				`{"cond":"succeeded"}` + "\n"))
+	}))
+	defer ts.Close()
+	withFakeMajorAPIServer(t, ts)
+	m := getModule("dnsdb")().(*DNSDB)
+	_ = m.Setup(map[string]any{"dnsdb_api_key": "k"})
+	out, err := m.HandleEvent(context.Background(), newDomainEvent(t, "example.com"))
+	if err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	// Only the last entry should produce a PROVIDER_MAIL event.
+	found := 0
+	for _, e := range out {
+		if e.Type == event.PROVIDER_MAIL && e.Data == "mx.example.com" {
+			found++
+		}
+	}
+	if found != 1 {
+		t.Errorf("expected exactly 1 PROVIDER_MAIL, got %d (events=%d)", found, len(out))
+	}
+}
+
+// TestCIRCLLUDomainForwardOrientation is a regression test for Codex
+// adversarial review 2026-04-09: name queries must match records
+// where rrname == query (the common passive-DNS shape), not only
+// the reverse orientation. Pre-fix code would have returned 0
+// findings on this fixture.
+func TestCIRCLLUDomainForwardOrientation(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(
+			`{"rrtype":"A","rrname":"example.com","rdata":"93.184.216.34","time_last":1600000000}` + "\n" +
+				`{"rrtype":"MX","rrname":"example.com","rdata":"10 mx.example.com.","time_last":1600000000}` + "\n" +
+				`{"rrtype":"CNAME","rrname":"example.com","rdata":"cdn.example.net.","time_last":1600000000}` + "\n"))
+	}))
+	defer ts.Close()
+	withFakeMajorAPIServer(t, ts)
+	m := getModule("circllu")().(*CIRCLLU)
+	_ = m.Setup(map[string]any{
+		"circllu_api_key_login":    "u",
+		"circllu_api_key_password": "p",
+	})
+	out, err := m.HandleEvent(context.Background(), newDomainEvent(t, "example.com"))
+	if err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	want := map[string]bool{"93.184.216.34": false, "mx.example.com": false, "cdn.example.net": false}
+	for _, e := range out {
+		if e.Type == event.CO_HOSTED_SITE {
+			if _, ok := want[e.Data]; ok {
+				want[e.Data] = true
+			}
+		}
+	}
+	for k, v := range want {
+		if !v {
+			t.Errorf("missing CO_HOSTED_SITE %q in output", k)
+		}
+	}
+}
+
 // compile-time interface checks.
 var _ module.Module = (*DNSDB)(nil)
 var _ module.Module = (*Whoxy)(nil)

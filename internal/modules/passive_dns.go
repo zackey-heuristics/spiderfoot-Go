@@ -161,9 +161,19 @@ func (m *DNSDB) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Eve
 				}
 			case "MX":
 				for _, d := range r.Obj.RData {
-					// MX rdata is "<pref> <host>".
+					// MX rdata is "<pref> <host>". Guard against
+					// malformed/empty upstream values — an empty
+					// or whitespace-only entry would otherwise
+					// panic on parts[-1]. See Codex adversarial
+					// review 2026-04-09.
 					parts := strings.Fields(d)
+					if len(parts) == 0 {
+						continue
+					}
 					host := strings.TrimRight(parts[len(parts)-1], ".")
+					if host == "" {
+						continue
+					}
 					if e, err := event.New(event.PROVIDER_MAIL, host, "dnsdb", evt); err == nil {
 						results = append(results, e)
 					}
@@ -297,8 +307,20 @@ func (m *Whoxy) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Eve
 
 	var results []*event.Event
 	seenDomain := map[string]bool{}
-	maxPages := 20
-	for page := 1; page <= maxPages; page++ {
+	// Pagination is driven by resp.TotalPages returned on page 1.
+	// The absolute safety cap guards against a runaway upstream
+	// advertising an unbounded page count; if it is ever hit we
+	// emit an explicit RAW_RIR_DATA marker so the truncation is
+	// visible rather than silent. See Codex adversarial review
+	// 2026-04-09.
+	const absMaxPages = 500
+	totalPages := 1
+	truncated := false
+	for page := 1; ; page++ {
+		if page > absMaxPages {
+			truncated = true
+			break
+		}
 		u := "https://api.whoxy.com/?key=" + url.QueryEscape(m.apiKey) +
 			"&reverse=whois&email=" + url.QueryEscape(evt.Data) +
 			"&page=" + itoa(page)
@@ -326,8 +348,18 @@ func (m *Whoxy) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Eve
 				results = append(results, e)
 			}
 		}
-		if resp.TotalPages <= 1 || resp.CurrentPage >= resp.TotalPages {
+		if resp.TotalPages > totalPages {
+			totalPages = resp.TotalPages
+		}
+		if totalPages <= 1 || resp.CurrentPage >= totalPages {
 			break
+		}
+	}
+	if truncated {
+		if e, err := event.New(event.RAW_RIR_DATA,
+			"whoxy: reverse-whois pagination capped at "+itoa(absMaxPages)+" pages; results may be incomplete",
+			"whoxy", evt); err == nil {
+			results = append(results, e)
 		}
 	}
 	if len(results) == 0 {
@@ -576,19 +608,50 @@ func (m *CIRCLLU) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.E
 	}
 
 	var results []*event.Event
+	seenOut := map[string]bool{}
+	emit := func(v string) {
+		v = strings.TrimRight(v, ".")
+		if v == "" || seenOut[v] {
+			return
+		}
+		seenOut[v] = true
+		if e, err := event.New(event.CO_HOSTED_SITE, v, "circllu", evt); err == nil {
+			results = append(results, e)
+		}
+	}
 	for _, r := range records {
 		switch evt.Type {
 		case event.IP_ADDRESS:
+			// IP query: forward records have the IP in rdata
+			// and the resolved name in rrname.
 			if r.RRType == "A" && r.RData == evt.Data && r.RRName != "" {
-				if e, err := event.New(event.CO_HOSTED_SITE, r.RRName, "circllu", evt); err == nil {
-					results = append(results, e)
-				}
+				emit(r.RRName)
 			}
 		case event.INTERNET_NAME, event.DOMAIN_NAME:
-			if r.RData == evt.Data && r.RRName != "" {
-				if e, err := event.New(event.CO_HOSTED_SITE, r.RRName, "circllu", evt); err == nil {
-					results = append(results, e)
+			// Name query: the common passive-DNS shape is
+			// rrname == query and rdata == resolved target
+			// (CNAME / NS / MX host / etc). Accept either
+			// orientation because providers occasionally
+			// return the inverse for historical records. See
+			// Codex adversarial review 2026-04-09 — the
+			// pre-fix code only matched the inverse and
+			// produced systematic false negatives for
+			// domain-based lookups.
+			if r.RRName == evt.Data && r.RData != "" {
+				// For MX records rdata is "<pref> <host>";
+				// pull the last whitespace token, guarding
+				// malformed upstream values.
+				if r.RRType == "MX" {
+					parts := strings.Fields(r.RData)
+					if len(parts) == 0 {
+						continue
+					}
+					emit(parts[len(parts)-1])
+				} else {
+					emit(r.RData)
 				}
+			} else if r.RData == evt.Data && r.RRName != "" {
+				emit(r.RRName)
 			}
 		}
 	}
