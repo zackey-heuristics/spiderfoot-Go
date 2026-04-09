@@ -409,6 +409,70 @@ func TestNeutrinoFieldNames(t *testing.T) {
 	}
 }
 
+// TestNeutrinoAPIHostRouting is a regression test for Codex
+// adversarial review 2026-04-09. Host/domain events must be routed
+// to the host-reputation endpoint (not ip-info/ip-blocklist), and
+// INTERNET_NAME must be in WatchedEvents.
+func TestNeutrinoAPIHostRouting(t *testing.T) {
+	na := getModule("neutrinoapi")().(*NeutrinoAPI)
+	var seen bool
+	for _, w := range na.WatchedEvents() {
+		if w == event.INTERNET_NAME {
+			seen = true
+		}
+	}
+	if !seen {
+		t.Fatalf("neutrinoapi: INTERNET_NAME not in WatchedEvents: %v", na.WatchedEvents())
+	}
+
+	var hostReputationCalled, ipInfoCalled, ipBlocklistCalled bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/host-reputation"):
+			hostReputationCalled = true
+			_, _ = w.Write([]byte(`{"is-listed": true}`))
+		case strings.HasSuffix(r.URL.Path, "/ip-info"):
+			ipInfoCalled = true
+			_, _ = w.Write([]byte(`{}`))
+		case strings.HasSuffix(r.URL.Path, "/ip-blocklist"):
+			ipBlocklistCalled = true
+			_, _ = w.Write([]byte(`{}`))
+		default:
+			w.WriteHeader(404)
+		}
+	}))
+	defer ts.Close()
+	withFakeMajorAPIServer(t, ts)
+
+	m := getModule("neutrinoapi")().(*NeutrinoAPI)
+	_ = m.Setup(map[string]any{
+		"neutrinoapi_api_key_user":   "u",
+		"neutrinoapi_api_key_secret": "s",
+	})
+	root, _ := event.New(event.ROOT, "target", "test", nil)
+	host, err := event.New(event.INTERNET_NAME, "evil.example.com", "test", root)
+	if err != nil {
+		t.Fatalf("create host event: %v", err)
+	}
+	out, err := m.HandleEvent(context.Background(), host)
+	if err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	if !hostReputationCalled {
+		t.Errorf("host-reputation not called for INTERNET_NAME")
+	}
+	if ipInfoCalled || ipBlocklistCalled {
+		t.Errorf("IP endpoints called for host event: ipInfo=%v ipBlocklist=%v", ipInfoCalled, ipBlocklistCalled)
+	}
+	// Expect MALICIOUS + BLACKLISTED + RAW_RIR = 3 events.
+	if len(out) != 3 {
+		for i, e := range out {
+			t.Logf("[%d] %s = %q", i, e.Type, e.Data)
+		}
+		t.Fatalf("expected 3 events, got %d", len(out))
+	}
+}
+
 // compile-time interface checks.
 var _ module.Module = (*IPAPICo)(nil)
 var _ module.Module = (*IPAPICom)(nil)

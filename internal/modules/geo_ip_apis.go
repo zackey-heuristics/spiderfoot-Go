@@ -473,9 +473,17 @@ func (m *NeutrinoAPI) Setup(opts map[string]any) error {
 	return nil
 }
 
-// WatchedEvents returns consumed event types.
+// WatchedEvents returns consumed event types. Host-reputation is
+// routed on INTERNET_NAME / DOMAIN_NAME events; ip-info and
+// ip-blocklist are routed on IP events; phone-validate on phones.
 func (m *NeutrinoAPI) WatchedEvents() []event.Type {
-	return []event.Type{event.IP_ADDRESS, event.IPV6_ADDRESS, event.PHONE_NUMBER}
+	return []event.Type{
+		event.IP_ADDRESS,
+		event.IPV6_ADDRESS,
+		event.INTERNET_NAME,
+		event.DOMAIN_NAME,
+		event.PHONE_NUMBER,
+	}
 }
 
 // ProducedEvents returns emitted event types.
@@ -572,8 +580,38 @@ func (m *NeutrinoAPI) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 		return results, nil
 	}
 
-	// IP_ADDRESS / IPV6_ADDRESS
 	emitted := false
+
+	// Host/domain events → host-reputation only. Routing
+	// host-reputation on IP data (as the pre-review code did) was
+	// both wrong and an unnecessary credit burn. See Codex
+	// adversarial review 2026-04-09.
+	if evt.Type == event.INTERNET_NAME || evt.Type == event.DOMAIN_NAME {
+		body, ok := m.neutrinoPost(ctx, "host-reputation", url.Values{"host": {evt.Data}})
+		if !ok || len(body) == 0 {
+			return nil, nil
+		}
+		var hr neutrinoHostReputationResp
+		if err := json.Unmarshal(body, &hr); err != nil {
+			return nil, nil
+		}
+		if !hr.IsListed {
+			return nil, nil
+		}
+		if e, err := event.New(event.MALICIOUS_IPADDR, "NeutrinoAPI - Host Reputation ["+evt.Data+"]", "neutrinoapi", evt); err == nil {
+			results = append(results, e)
+		}
+		if e, err := event.New(event.BLACKLISTED_IPADDR, "NeutrinoAPI - Host Reputation ["+evt.Data+"]", "neutrinoapi", evt); err == nil {
+			results = append(results, e)
+		}
+		if e, err := event.New(event.RAW_RIR_DATA, string(body), "neutrinoapi", evt); err == nil {
+			results = append(results, e)
+		}
+		committed = true
+		return results, nil
+	}
+
+	// IP_ADDRESS / IPV6_ADDRESS → ip-info + ip-blocklist.
 	if body, ok := m.neutrinoPost(ctx, "ip-info", url.Values{"ip": {evt.Data}}); ok && len(body) > 0 {
 		var ipi neutrinoIPInfoResp
 		if err := json.Unmarshal(body, &ipi); err == nil {
@@ -593,21 +631,6 @@ func (m *NeutrinoAPI) HandleEvent(ctx context.Context, evt *event.Event) ([]*eve
 				results = append(results, e)
 			}
 			if e, err := event.New(event.BLACKLISTED_IPADDR, "NeutrinoAPI - IP Blocklist ["+evt.Data+"]", "neutrinoapi", evt); err == nil {
-				results = append(results, e)
-			}
-			if e, err := event.New(event.RAW_RIR_DATA, string(body), "neutrinoapi", evt); err == nil {
-				results = append(results, e)
-			}
-			emitted = true
-		}
-	}
-	if body, ok := m.neutrinoPost(ctx, "host-reputation", url.Values{"host": {evt.Data}}); ok && len(body) > 0 {
-		var hr neutrinoHostReputationResp
-		if err := json.Unmarshal(body, &hr); err == nil && hr.IsListed {
-			if e, err := event.New(event.MALICIOUS_IPADDR, "NeutrinoAPI - Host Reputation ["+evt.Data+"]", "neutrinoapi", evt); err == nil {
-				results = append(results, e)
-			}
-			if e, err := event.New(event.BLACKLISTED_IPADDR, "NeutrinoAPI - Host Reputation ["+evt.Data+"]", "neutrinoapi", evt); err == nil {
 				results = append(results, e)
 			}
 			if e, err := event.New(event.RAW_RIR_DATA, string(body), "neutrinoapi", evt); err == nil {
