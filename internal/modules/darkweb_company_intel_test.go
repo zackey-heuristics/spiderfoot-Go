@@ -260,6 +260,36 @@ func TestOnionSearchEngineParse(t *testing.T) {
 	}
 }
 
+// TestOnionSearchEnginePercentDecoded is a regression test for
+// Codex adversarial review 2026-04-09: the u= parameter is a
+// query-parameter payload that may be percent-encoded; it must be
+// decoded before emission so downstream consumers see canonical
+// onion URLs, not wrapped values.
+func TestOnionSearchEnginePercentDecoded(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(
+			`<a href="url.php?u=http%3A%2F%2Fabc1234.onion%2Fpath%3Fq%3D1">E</a>` +
+				`<a href="url.php?u=http://not-onion.example/x">bad</a>`))
+	}))
+	defer ts.Close()
+	withFakeMajorAPIServer(t, ts)
+	m := getModule("onionsearchengine")().(*OnionSearchEngine)
+	_ = m.Setup(nil)
+	out, err := m.HandleEvent(context.Background(), newDomainEvent(t, "example.com"))
+	if err != nil {
+		t.Fatalf("HandleEvent: %v", err)
+	}
+	if len(out) != 1 {
+		for i, e := range out {
+			t.Logf("[%d] %s = %q", i, e.Type, e.Data)
+		}
+		t.Fatalf("expected 1 event, got %d", len(out))
+	}
+	if out[0].Data != "http://abc1234.onion/path?q=1" {
+		t.Errorf("expected decoded canonical URL, got %q", out[0].Data)
+	}
+}
+
 // TestBitcoinAbuseLiveParse verifies the success path.
 func TestBitcoinAbuseLiveParse(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -390,6 +420,21 @@ func TestOnypheLiveParse(t *testing.T) {
 			t.Logf("[%d] %s = %q", i, e.Type, e.Data)
 		}
 		t.Fatalf("expected 8 events, got %d", len(out))
+	}
+	// Regression for Codex adversarial review 2026-04-09:
+	// MALICIOUS_IPADDR must carry the queried IP artifact, not
+	// the threatlist label.
+	var malFound bool
+	for _, e := range out {
+		if e.Type == event.MALICIOUS_IPADDR {
+			malFound = true
+			if e.Data != "1.2.3.4" {
+				t.Errorf("MALICIOUS_IPADDR should carry IP, got %q", e.Data)
+			}
+		}
+	}
+	if !malFound {
+		t.Errorf("no MALICIOUS_IPADDR emitted")
 	}
 }
 

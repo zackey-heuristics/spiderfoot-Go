@@ -182,15 +182,31 @@ func (m *OnionSearchEngine) HandleEvent(ctx context.Context, evt *event.Event) (
 		}
 		matches := onionSEURLRE.FindAllStringSubmatch(content, -1)
 		for _, mm := range matches {
-			link := mm[1]
-			if emitted[link] {
+			// The captured value is a query-parameter payload,
+			// so it may be percent-encoded. Decode once and
+			// reject anything that does not parse as an onion
+			// URL with a host. See Codex adversarial review
+			// 2026-04-09 — the pre-fix code emitted wrapped
+			// values directly and produced non-canonical
+			// DARKNET_MENTION_URL events.
+			raw := mm[1]
+			decoded, err := url.QueryUnescape(raw)
+			if err != nil {
 				continue
 			}
-			emitted[link] = true
-			if !strings.Contains(link, ".onion") {
+			parsed, err := url.Parse(decoded)
+			if err != nil || parsed.Host == "" {
 				continue
 			}
-			if e, err := event.New(event.DARKNET_MENTION_URL, link, "onionsearchengine", evt); err == nil {
+			if !strings.HasSuffix(parsed.Host, ".onion") {
+				continue
+			}
+			canon := parsed.String()
+			if emitted[canon] {
+				continue
+			}
+			emitted[canon] = true
+			if e, err := event.New(event.DARKNET_MENTION_URL, canon, "onionsearchengine", evt); err == nil {
 				results = append(results, e)
 			}
 		}
@@ -603,19 +619,29 @@ func (m *Onyphe) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Ev
 		}
 	}
 
-	// threatlist
+	// threatlist — MALICIOUS_IPADDR must carry the queried IP as
+	// its canonical artifact value (see phishing_reputation.go
+	// convention and Codex adversarial review 2026-04-09). The
+	// threatlist label is preserved in the adjacent RAW_RIR_DATA
+	// event's body. Dedup on the list label guards against
+	// multiple list hits re-emitting the same IP.
 	if tl, raw, ok := m.onypheQuery(ctx, "threatlist", evt.Data); ok {
 		any = true
 		if e, err := event.New(event.RAW_RIR_DATA, string(raw), "onyphe", evt); err == nil {
 			results = append(results, e)
 		}
+		ipEmitted := false
 		for _, r := range tl.Results {
 			t := asString(r["threatlist"])
 			if t == "" || sent["tl:"+t] {
 				continue
 			}
 			sent["tl:"+t] = true
-			if e, err := event.New(event.MALICIOUS_IPADDR, t, "onyphe", evt); err == nil {
+			if ipEmitted {
+				continue
+			}
+			ipEmitted = true
+			if e, err := event.New(event.MALICIOUS_IPADDR, evt.Data, "onyphe", evt); err == nil {
 				results = append(results, e)
 			}
 		}
