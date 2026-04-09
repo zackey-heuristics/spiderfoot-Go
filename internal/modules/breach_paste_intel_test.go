@@ -313,14 +313,37 @@ func TestGrepappEmptyNoCommit(t *testing.T) {
 	}
 }
 
-// TestSnovLiveParse exercises the two-step OAuth + domain-emails path.
+// TestSnovLiveParse exercises the two-step OAuth + domain-emails
+// path and asserts the Codex adversarial review 2026-04-09 fixes:
+// (1) secrets must travel in a POST body, never the URL; (2) the
+// access token must be sent via Authorization: Bearer, never the
+// URL; (3) cross-domain emails must be dropped.
 func TestSnovLiveParse(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case strings.Contains(r.URL.Path, "/v1/oauth/access_token"):
+			if r.Method != http.MethodPost {
+				t.Errorf("token: expected POST, got %s", r.Method)
+			}
+			if strings.Contains(r.URL.RawQuery, "client_id") || strings.Contains(r.URL.RawQuery, "client_secret") {
+				t.Errorf("token: secrets leaked into URL: %q", r.URL.RawQuery)
+			}
+			if err := r.ParseForm(); err != nil {
+				t.Errorf("token: parse form: %v", err)
+			}
+			if r.PostForm.Get("client_id") != "id" || r.PostForm.Get("client_secret") != "sec" {
+				t.Errorf("token: form missing creds: %v", r.PostForm)
+			}
 			_, _ = w.Write([]byte(`{"access_token":"tok"}`))
 		case strings.Contains(r.URL.Path, "/v2/domain-emails-with-info"):
-			_, _ = w.Write([]byte(`{"emails":[{"email":"foo@example.com"},{"email":"bar@example.com"}],"lastId":42}`))
+			if strings.Contains(r.URL.RawQuery, "access_token") {
+				t.Errorf("domain-emails: access_token leaked into URL: %q", r.URL.RawQuery)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer tok" {
+				t.Errorf("domain-emails: Authorization header = %q, want %q", got, "Bearer tok")
+			}
+			// Mix in a cross-domain address to prove filtering.
+			_, _ = w.Write([]byte(`{"emails":[{"email":"foo@example.com"},{"email":"bar@example.com"},{"email":"attacker@evil.example.org"},{"email":"ops@mail.example.com"}],"lastId":42}`))
 		default:
 			t.Errorf("unexpected path: %q", r.URL.Path)
 		}
@@ -336,12 +359,18 @@ func TestSnovLiveParse(t *testing.T) {
 	if err != nil {
 		t.Fatalf("HandleEvent: %v", err)
 	}
-	// RAW_RIR_DATA + 2 EMAILADDR
-	if len(out) != 3 {
+	// RAW_RIR_DATA + 3 in-scope EMAILADDR (foo/bar@example.com + ops@mail.example.com);
+	// attacker@evil.example.org must be dropped.
+	if len(out) != 4 {
 		for i, e := range out {
 			t.Logf("[%d] %s = %q", i, e.Type, e.Data)
 		}
-		t.Fatalf("expected 3 events, got %d", len(out))
+		t.Fatalf("expected 4 events, got %d", len(out))
+	}
+	for _, e := range out {
+		if e.Type == event.EMAILADDR && strings.Contains(e.Data, "evil.example.org") {
+			t.Errorf("cross-domain email leaked: %q", e.Data)
+		}
 	}
 }
 

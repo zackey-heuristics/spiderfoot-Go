@@ -17,6 +17,7 @@ package modules
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"net/url"
 	"regexp"
 	"strconv"
@@ -477,11 +478,20 @@ func (m *Snov) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Even
 		return nil, nil
 	}
 
-	// 1. Fetch access token.
-	tokenURL := "https://api.snov.io/v1/oauth/access_token?" +
-		"grant_type=client_credentials&client_id=" + url.QueryEscape(m.clientID) +
-		"&client_secret=" + url.QueryEscape(m.clientSecret)
-	body, ok := majorAPIFetch(ctx, tokenURL, nil)
+	// 1. Fetch access token. Secrets MUST travel in a POST body,
+	//    not the URL, so they do not end up in reverse-proxy logs,
+	//    tracing spans, or error telemetry. See Codex adversarial
+	//    review 2026-04-09.
+	tokenForm := url.Values{
+		"grant_type":    {"client_credentials"},
+		"client_id":     {m.clientID},
+		"client_secret": {m.clientSecret},
+	}
+	body, ok := majorAPIFetchPOST(ctx, "https://api.snov.io/v1/oauth/access_token",
+		func(h http.Header) {
+			h.Set("Content-Type", "application/x-www-form-urlencoded")
+		},
+		[]byte(tokenForm.Encode()))
 	if !ok || len(body) == 0 {
 		return nil, nil
 	}
@@ -490,7 +500,27 @@ func (m *Snov) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Even
 		return nil, nil
 	}
 
-	// 2. Page through domain emails.
+	// Normalize the target domain for scoping. Emails whose host
+	// does not match the queried domain (or a subdomain of it)
+	// are dropped — upstream occasionally returns cross-tenant
+	// aliases that would poison the scan graph. See Codex
+	// adversarial review 2026-04-09.
+	targetDomain := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(evt.Data)), ".")
+	inScope := func(email string) bool {
+		at := strings.LastIndex(email, "@")
+		if at < 0 || at == len(email)-1 {
+			return false
+		}
+		host := email[at+1:]
+		return host == targetDomain || strings.HasSuffix(host, "."+targetDomain)
+	}
+
+	// 2. Page through domain emails. Access token goes in the
+	//    Authorization header rather than the URL.
+	bearer := func(h http.Header) {
+		h.Set("Authorization", "Bearer "+tok.AccessToken)
+	}
+
 	var results []*event.Event
 	seen := map[string]bool{}
 	truncated := false
@@ -498,10 +528,9 @@ func (m *Snov) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Even
 	for page := 0; page < snovMaxPages; page++ {
 		u := "https://api.snov.io/v2/domain-emails-with-info?" +
 			"domain=" + url.QueryEscape(evt.Data) +
-			"&access_token=" + url.QueryEscape(tok.AccessToken) +
 			"&type=all&limit=" + itoa(snovLimit) +
 			"&lastId=" + itoa(lastID)
-		body, ok := majorAPIFetch(ctx, u, nil)
+		body, ok := majorAPIFetch(ctx, u, bearer)
 		if !ok || len(body) == 0 {
 			break
 		}
@@ -518,6 +547,9 @@ func (m *Snov) HandleEvent(ctx context.Context, evt *event.Event) ([]*event.Even
 				continue
 			}
 			if !strings.Contains(low, "@") {
+				continue
+			}
+			if !inScope(low) {
 				continue
 			}
 			seen[low] = true
